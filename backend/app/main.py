@@ -3,12 +3,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from uvicorn import run
 from app.settings.config import settings
-from app.routers import root, llm
+from app.routers import root, llm, process_audio_data
 
 # List of available api endpoints
 all_routers = [
     (root.router, "", ["root"]),
-    (llm.router, "/llm", ["llm"])
+    (llm.router, "/llm", ["llm"]),
+    (process_audio_data.router, "/processAudioData", ["processAudioData"])
 ]
 
 
