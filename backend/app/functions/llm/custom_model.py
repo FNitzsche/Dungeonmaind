@@ -3,9 +3,9 @@ import ollama
 
 def run_custom_model(prompt: str) -> str:
     """
-    Placeholder for custom LLM.
+    Run a custom LLM.
     """
-    # TODO: integrate model here
+
     # Initialize the Ollama client
     client = ollama.Client()
 
