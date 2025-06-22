@@ -1,4 +1,11 @@
+from typing import List
+
 from pydantic import BaseModel, Field
+
+class Segment(BaseModel):
+    start: float = Field(..., description="Segment start time in seconds")
+    end: float = Field(..., description="Segment end time in seconds")
+    text: str = Field(..., description="Transcribed text for this segment")
 
 
 class UploadAudioFileToDBResponse(BaseModel):
@@ -9,4 +16,7 @@ class UploadAudioFileToDBResponse(BaseModel):
 
 
 class TranscriptionResponse(BaseModel):
-    output: str = Field(..., description="Transcribed text from audio file")
+    output: List[Segment] = Field(
+        ...,
+        description="List of transcription segments with timestamps and text"
+    )
