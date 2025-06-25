@@ -2,14 +2,19 @@
 #It requires: Python >=3.9 and <3.13
 #ffmpeg installation necessary
 
+import torch
 import whisperx
 import tempfile
 
-def transcribe_audio(audio_bytes: bytes, device="cpu", compute_type="int8", batch_size=16):
+def transcribe_audio(audio_bytes: bytes, compute_type="int8", batch_size=16):
+
+    #set default device to GPU
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # 1. Load the model
     print("Loading WhisperX")
     model = whisperx.load_model("base", device, compute_type=compute_type)
+    
     # save model to local path (optional)
     # model_dir = "/path/"
     # model = whisperx.load_model("large-v2", device, compute_type=compute_type, download_root=model_dir)
