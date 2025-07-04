@@ -25,5 +25,11 @@ class Settings(BaseSettings):
         description="Listening port"
     )
 
+    llm_model: str = Field(
+        default="hf.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF:Q5_K_M",
+        validation_alias="LLM_MODEL",
+        description="The default LLM model used by the backend"
+    )
+
 
 settings = Settings()

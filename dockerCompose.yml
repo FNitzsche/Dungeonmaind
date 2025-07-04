@@ -21,8 +21,11 @@ services:
       dockerfile: dockerfile
     ports:
       - "8000:8000"
+    depends_on:
+      - ollama
     environment:
       - PYTHONUNBUFFERED=1
+      - OLLAMA_URL=http://ollama:11434
     volumes:
       - ./backend:/app
     command: >
@@ -30,3 +33,16 @@ services:
       --host 0.0.0.0
       --port 8000
       --reload
+
+  ollama:
+    build:
+      context: ./LLM
+      dockerfile: dockerfile
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_volume:/root/.ollama
+
+volumes:
+  ollama_volume:

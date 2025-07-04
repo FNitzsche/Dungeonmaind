@@ -1,3 +1,4 @@
+
 <script setup lang="ts">
 import { transform } from 'typescript'
 import { ref } from 'vue'
@@ -187,10 +188,16 @@ const result = await response.json()
     <div v-if="audioUploadStatus" class="output">
       <p>{{ audioUploadStatus }}</p>
     </div>
+
+<template>
+  <div>
+    <router-view />
+
   </div>
 
 
 </template>
+
 
 
 <style scoped>
@@ -247,3 +254,4 @@ h1 {
   text-align: center;
 }
 </style>
+
