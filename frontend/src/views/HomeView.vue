@@ -21,10 +21,17 @@ const currentAudio = ref<HTMLAudioElement | null>(null)
 
 const sessionId = ref<string>('')     
 const chunkIndex = ref<number>(0)     
-const CHUNK_MS = 300_000; // 10 seconds for testing
-
+// 10 seconds: 10 *  1_000
+// 5 minutes : 05 * 60_000
+// 10 minutes: 10 * 60_000
+const CHUNK_MS = 5 * 60_000;
+const pendingUploads: Promise<any>[] = []; 
 
 const diceResult = ref<string>('')
+
+const recordedBlob = ref<Blob | null>(null)
+const recordedMime = ref<string>('audio/webm')
+
 
 function goToConfig() {
   router.push('/config')
@@ -98,56 +105,94 @@ function onAudioFileChange(event: Event) {
 }
 
 
-async function startRecording(){
-  try{
-    const stream = await navigator.mediaDevices.getUserMedia({audio: true})
+let lastChunkStartMs = 0;
+
+async function startRecording() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
     micPermissionStatus.value = 'Microphone access granted.'
+    audioUploadStatus.value = ''          // clear old messages
     audioStream.value = stream
     audioChunks.value = []
+    recordedBlob.value = null
     recordedAudioURL.value = null
 
-    const preferredMime = 
-      MediaRecorder.isTypeSupported('audio/wav') ? 'audio/wav' :
+    // keep it simple: pick a sane mime the browser supports
+    const mime =
       MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' :
-      MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : ''
+      MediaRecorder.isTypeSupported('audio/webm')              ? 'audio/webm' :
+      ''
 
-    mediaRecorder.value = preferredMime
-      ? new MediaRecorder(stream, { mimeType: preferredMime })
+    mediaRecorder.value = mime
+      ? new MediaRecorder(stream, { mimeType: mime })
       : new MediaRecorder(stream)
 
-    // keep local copy for your Play/Transcribe buttons + send live
+    recordedMime.value = mediaRecorder.value.mimeType || mime || 'audio/webm'
+
     mediaRecorder.value.ondataavailable = (e) => {
       if (!e.data || e.data.size === 0) return
-      audioChunks.value.push(e.data)   
-      uploadLiveChunk(e.data)        
+      audioChunks.value.push(e.data) 
+      uploadLiveChunk(e.data)            
     }
 
     mediaRecorder.value.onstop = () => {
-      const type = mediaRecorder.value?.mimeType || 'audio/webm'
-      const audioBlob = new Blob(audioChunks.value, { type })
-      recordedAudioURL.value = URL.createObjectURL(audioBlob)
+  const blob = new Blob(audioChunks.value, { type: recordedMime.value })
+  recordedBlob.value = blob
+  recordedAudioURL.value = URL.createObjectURL(blob) // toggles the buttons
     }
-
 
     sessionId.value = crypto.randomUUID()
     chunkIndex.value = 0
 
-    mediaRecorder.value.start(CHUNK_MS)
+    mediaRecorder.value.start(2000) // 2s chunks; any value is fine
     isRecording.value = true
-  } catch(error){
+  } catch (error) {
     console.error('Microphone access denied:', error)
     micPermissionStatus.value = 'Microphone access required'
   }
 }
 
+async function stopRecording() {
+  try {
+    if (mediaRecorder.value && mediaRecorder.value.state !== 'inactive') {
+      try { mediaRecorder.value.requestData() } catch {}  // ensure final chunk
+      mediaRecorder.value.stop()
+    }
 
-
-function stopRecording(){
-    try { mediaRecorder.value?.requestData(); } catch {}
-    mediaRecorder.value?.stop()
+    audioStream.value?.getTracks().forEach(t => t.stop())
     isRecording.value = false
-}
 
+    // wait for onstop to finish building recordedBlob/URL (so buttons appear)
+    await new Promise<void>((resolve) => {
+      const mr = mediaRecorder.value
+      if (!mr) return resolve()
+      // if it's already inactive, onstop has fired
+      if (mr.state === 'inactive') return resolve()
+      const done = () => { mr.removeEventListener('stop', done); resolve() }
+      mr.addEventListener('stop', done)
+    })
+
+    // wait for any in-flight chunk uploads to finish
+    if (pendingUploads.length) {
+      await Promise.allSettled(pendingUploads)
+    }
+
+    // auto-flush the partial tail on the server
+    const fd = new FormData()
+    fd.append('sessionId', sessionId.value)
+    const res = await fetch(
+      `${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.FLUSH_SESSION}`,
+      { method: 'POST', body: fd }
+    )
+    if (!res.ok) {
+      console.error('Flush failed:', res.status, await res.text())
+    } else {
+      console.log('Flush result:', await res.json())
+    }
+  } catch (err) {
+    console.error('stopRecording error:', err)
+  }
+}
 
 function playRecording(){
   if(!recordedAudioURL.value) return
@@ -163,29 +208,26 @@ function playRecording(){
 }
 
 async function transcribeRecording() {
-  if (!audioChunks.value.length){
+  if (!recordedBlob.value || recordedBlob.value.size === 0) {
     audioUploadStatus.value = 'No audio to transcribe !'
     return
   }
-
-  const audioBlob = new Blob(audioChunks.value,{type: 'audio/wav'})
+  const ext = recordedMime.value.includes('ogg') ? 'ogg'
+            : recordedMime.value.includes('wav') ? 'wav'
+            : 'webm'
   const formData = new FormData()
-  formData.append('audio', audioBlob, 'recording.wav')
+  formData.append('audio', recordedBlob.value, `recording.${ext}`)
 
   try {
-    const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.TRANSCRIBE_AUDIO_FILE}`,{
-      method: 'POST',
-      body: formData
-    })
-
-    if (!response.ok){
-      throw new Error(`Transcription failed with status ${response.status}`)
-    }
-
+    const response = await fetch(
+      `${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.TRANSCRIBE_AUDIO_FILE}`,
+      { method: 'POST', body: formData }
+    )
+    if (!response.ok) throw new Error(`Transcription failed with status ${response.status}`)
     const result = await response.json()
     audioUploadStatus.value = `Transcription: ${result.message || 'Success'}`
-  } catch (error) {
-    console.error('Transcription error:', error)
+  } catch (e) {
+    console.error('Transcription error:', e)
     audioUploadStatus.value = 'Transcription failed.'
   }
 }
@@ -201,20 +243,19 @@ async function uploadLiveChunk(blob: Blob) {
   fd.append('sessionId', sessionId.value)
   fd.append('chunkIndex', String(chunkIndex.value))
 
-  try {
-    const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.TRANSCRIBE_CHUNK}`, {
-      method: 'POST',
-      body: fd,
-    })
-    if (!res.ok) {
-      console.error('Chunk upload failed', res.status, await res.text())
-    }
-  } catch (e) {
-    console.error('Chunk upload error', e)
-  } finally {
+  const p = fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.TRANSCRIBE_CHUNK}`, {
+    method: 'POST',
+    body: fd,
+  }).catch(e => console.error('Chunk upload error', e))
+  pendingUploads.push(p)
+  await p.finally(() => {
+    // drop settled promises so the list stays small
+    const i = pendingUploads.indexOf(p)
+    if (i >= 0) pendingUploads.splice(i, 1)
     chunkIndex.value += 1
-  }
+  })
 }
+
 
 
 </script>

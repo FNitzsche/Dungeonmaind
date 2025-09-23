@@ -5,6 +5,7 @@ export const SERVER_CONFIG = {
     RUN_LLM: '/llm/runLLM',
     TRANSCRIBE_AUDIO_FILE: '/processAudioData/transcribeAudioFile',
     TRANSCRIBE_CHUNK: '/processAudioData/transcribeChunk',
+     FLUSH_SESSION: '/processAudioData/flushSession',
     CHANGE_CONFIG: '/config/changeConfig',
   },
 }

@@ -20,3 +20,13 @@ class TranscriptionResponse(BaseModel):
         ...,
         description="List of transcription segments with timestamps and text"
     )
+
+class ChunkUploadResponse(BaseModel):
+    status: str = Field(..., description="'ok' if chunk accepted")
+    sessionId: str
+    chunkIndex: int
+    accumulating: bool = Field(..., description="True until we hit the target window")
+
+class FlushSessionResponse(BaseModel):
+    status: str
+    sessionId: str
