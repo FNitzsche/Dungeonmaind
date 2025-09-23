@@ -19,6 +19,11 @@ const audioChunks = ref<Blob[]>([])
 const recordedAudioURL = ref<string | null>(null)
 const currentAudio = ref<HTMLAudioElement | null>(null)
 
+const sessionId = ref<string>('')     
+const chunkIndex = ref<number>(0)     
+const CHUNK_MS = 300_000; // 10 seconds for testing
+
+
 const diceResult = ref<string>('')
 
 function goToConfig() {
@@ -92,6 +97,7 @@ function onAudioFileChange(event: Event) {
   }
 }
 
+
 async function startRecording(){
   try{
     const stream = await navigator.mediaDevices.getUserMedia({audio: true})
@@ -100,14 +106,33 @@ async function startRecording(){
     audioChunks.value = []
     recordedAudioURL.value = null
 
-    mediaRecorder.value = new MediaRecorder(stream)
-    mediaRecorder.value.ondataavailable = (e) => e.data.size && audioChunks.value.push(e.data)
+    const preferredMime = 
+      MediaRecorder.isTypeSupported('audio/wav') ? 'audio/wav' :
+      MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' :
+      MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : ''
+
+    mediaRecorder.value = preferredMime
+      ? new MediaRecorder(stream, { mimeType: preferredMime })
+      : new MediaRecorder(stream)
+
+    // keep local copy for your Play/Transcribe buttons + send live
+    mediaRecorder.value.ondataavailable = (e) => {
+      if (!e.data || e.data.size === 0) return
+      audioChunks.value.push(e.data)   
+      uploadLiveChunk(e.data)        
+    }
+
     mediaRecorder.value.onstop = () => {
-      const audioBlob = new Blob(audioChunks.value, {type: 'audio/wav'  })
+      const type = mediaRecorder.value?.mimeType || 'audio/webm'
+      const audioBlob = new Blob(audioChunks.value, { type })
       recordedAudioURL.value = URL.createObjectURL(audioBlob)
     }
 
-    mediaRecorder.value.start()
+
+    sessionId.value = crypto.randomUUID()
+    chunkIndex.value = 0
+
+    mediaRecorder.value.start(CHUNK_MS)
     isRecording.value = true
   } catch(error){
     console.error('Microphone access denied:', error)
@@ -116,7 +141,9 @@ async function startRecording(){
 }
 
 
+
 function stopRecording(){
+    try { mediaRecorder.value?.requestData(); } catch {}
     mediaRecorder.value?.stop()
     isRecording.value = false
 }
@@ -167,6 +194,28 @@ function rollDice(sides: number) {
   const result = Math.floor(Math.random() * sides) + 1
   diceResult.value = `W${sides} → ${result}`
 }
+
+async function uploadLiveChunk(blob: Blob) {
+  const fd = new FormData()
+  fd.append('audio', blob, `chunk-${chunkIndex.value}.webm`)
+  fd.append('sessionId', sessionId.value)
+  fd.append('chunkIndex', String(chunkIndex.value))
+
+  try {
+    const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.TRANSCRIBE_CHUNK}`, {
+      method: 'POST',
+      body: fd,
+    })
+    if (!res.ok) {
+      console.error('Chunk upload failed', res.status, await res.text())
+    }
+  } catch (e) {
+    console.error('Chunk upload error', e)
+  } finally {
+    chunkIndex.value += 1
+  }
+}
+
 
 </script>
 
@@ -434,7 +483,7 @@ hr {
   right: 25%;
   top: 43%;
   transform: translateX(20%);
-  background-color: rgba(163, 148, 95, 0.9);
+  background-color: rgba(163, 148, 95, 0.8);
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 8px;
   padding: 1.5rem;

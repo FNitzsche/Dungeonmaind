@@ -1,0 +1,52 @@
+# Node & Vue
+node_modules/
+dist/
+build/
+.vite/
+coverage/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+next-env.d.ts
+
+# Environment files
+.env
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDEs and editors
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# TypeScript
+*.tsbuildinfo
+
+# Frontend Logs
+logs/
+test-results/
+lerna-debug.log*
+
+# Build artifacts
+dist-ssr/
+*.local
+
+# Cypress
+/cypress/videos/
+/cypress/screenshots/
+
+# Playwright & E2E reports
+playwright-report/
+*.spec.ts
+
+# Miscellaneous
+.env
+npm-debug.log*
+yarn-error.log*

@@ -4,6 +4,7 @@ import json
 
 from app.core.config import settings
 
+
 # The python script, will get the OLLAMA_URL = "http://ollama:11434" from the docker compose file, if docker is used.
 # If docker is not used for running the project, then it will fallback to "http://localhost:11434", where the local Ollama
 # LLM should be reachable.

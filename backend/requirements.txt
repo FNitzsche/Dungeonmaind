@@ -7,5 +7,9 @@ requests==2.32.4
 whisperx==3.4.2
 torch==2.7.1
 torchaudio==2.7.1
-ctranslate2==4.6.0
+ctranslate2==4.4.0
 uvicorn==0.35.0
+langchain>=0.1.17
+sentence-transformers==5.0.0
+langchain-community>=0.0.30
+chromadb>=0.4.24

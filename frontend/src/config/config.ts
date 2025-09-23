@@ -4,6 +4,7 @@ export const SERVER_CONFIG = {
   ENDPOINTS: {
     RUN_LLM: '/llm/runLLM',
     TRANSCRIBE_AUDIO_FILE: '/processAudioData/transcribeAudioFile',
+    TRANSCRIBE_CHUNK: '/processAudioData/transcribeChunk',
     CHANGE_CONFIG: '/config/changeConfig',
   },
 }
