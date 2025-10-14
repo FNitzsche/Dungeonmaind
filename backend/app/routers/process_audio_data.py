@@ -3,7 +3,6 @@ from app.base_models.process_audio_data_base_models import UploadAudioFileToDBRe
 from app.functions.process_audio_data.transcribe_audio import transcribe_audio
 from app.functions.process_audio_data.extract_audio_metadata import extract_audio_metadata
 import os
-from fastapi import Request
 router = APIRouter()
 
 
@@ -48,21 +47,13 @@ async def transcribe_audio_file(audio: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
     
 
-# @router.post("/uploadVoiceNote")
-# async def upload_voice_note(request: Request):
-#     form = await request.form()
-#     print("Form content:", dict(form))
-#     return {"received_form": dict(form)}
-
 @router.post("/uploadVoiceNote")
 async def upload_voice_note(audio: UploadFile = File(...), player_id: str = Form(...), player_name: str = Form(None),):
-    """
-    Simple test: saves uploaded audio to 'uploads/voice_notes' to verify connection.
-    """
+   
     try:
         os.makedirs("uploads/voice_notes", exist_ok=True)
 
-        # Use player_id for unique naming
+        # Use player_name for unique naming
         filename = f"{player_name}.wav"
         file_path = os.path.join("uploads/voice_notes", filename)
         #save audio file
@@ -78,37 +69,3 @@ async def upload_voice_note(audio: UploadFile = File(...), player_id: str = Form
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error saving voice note: {e}")
-    
-#@router.post("/uploadVoiceNote", response_model=UploadAudioFileToDBResponse)
-
-# async def upload_voice_note(audio: UploadFile = File(...), player_id : str = Form(...)):
-#     """
-#     Receives a player's voice note and saves it for later speaker recognition.
-#     Returns metadata for confirmation.
-#     """
-#     try:
-#         # Read file bytes
-#         audio_bytes = await audio.read()
-
-#         # Save file under uploads/voice_notes/<player_id>.wav
-#         import os
-#         os.makedirs("uploads/voice_notes", exist_ok=True)
-#         file_path = f"uploads/voice_notes/{player_id}.wav"
-#         with open(file_path, "wb") as f:
-#             f.write(audio_bytes)
-
-#         # Extract metadata (optional)
-#         metadata = extract_audio_metadata(
-#             audio_bytes,
-#             filename=audio.filename,
-#             content_type=audio.content_type,
-#         )
-
-#         # Return consistent response model
-#         return UploadAudioFileToDBResponse(
-#             output=f"Voice note for {player_id} saved successfully.",
-#             **metadata,
-#         )
-
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"Voice note upload failed: {e}")

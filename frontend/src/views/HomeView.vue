@@ -228,7 +228,6 @@ function playRecordingNote(){
   currentVoiceNote.value.play()
 }
 
-
 async function uploadVoiceNote() {
   if (!audioChunksVoiceNote.value.length) {
     audioUploadStatus.value = 'No voice note recorded!'
@@ -238,43 +237,11 @@ async function uploadVoiceNote() {
   const audioBlob = new Blob(audioChunksVoiceNote.value, { type: 'audio/wav' })
   const formData = new FormData()
   formData.append('audio', audioBlob, 'voice_note.wav')
-  //formData.append('player_id', store.currentPlayer?.id)
-  //formData.append('role', store.currentPlayer?.role)
-  //formData.append("playerName", store.currentPlayer?.name)
-
+  formData.append('player_id', store.currentPlayer?.id || 'test_player')
+  formData.append('player_name', store.currentPlayer?.name || 'Anonymous')
   
   try {
     const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.UPLOAD_VOICE_NOTE}`, {
-      method: 'POST',
-      body: formData,
-    })
-
-    if (!response.ok) {
-      throw new Error('Upload failed')
-    }
-    const data = await response.json()
-    console.log('Voice note uploaded:', data)
-  } catch (err) {
-    console.error('Error uploading voice note:', err)
-  }
-
-}
-
-async function uploadVoiceNoteTest() {
-  if (!audioChunksVoiceNote.value.length) {
-    audioUploadStatus.value = 'No voice note recorded!'
-    return
-  }
-
-  
-  const audioBlob = new Blob(audioChunksVoiceNote.value, { type: 'audio/wav' })
-  const formData = new FormData()
-  formData.append('audio', audioBlob, 'voice_note.wav')
-  formData.append('player_id', store.currentPlayer?.id || 'test_player')
-  formData.append('player_name', store.currentPlayer?.name || 'Anonymous')
-
-  try {
-    const response = await fetch('http://localhost:8000/processAudioData/uploadVoiceNote', {
       method: 'POST',
       body: formData,
     })
@@ -368,7 +335,7 @@ function rollDice(sides: number) {
 
         <div v-if="recordedVoiceNoteURL" class="play-button">
           <button @click="playRecordingNote" class="submit-button">Play</button>
-          <button @click="uploadVoiceNoteTest" class="submit-button">Save Voice Note</button>
+          <button @click="uploadVoiceNote" class="submit-button">Save Voice Note</button>
 
         </div>
       </div>
