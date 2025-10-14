@@ -24,6 +24,12 @@ const audioChunks = ref<Blob[]>([])
 const recordedAudioURL = ref<string | null>(null)
 const currentAudio = ref<HTMLAudioElement | null>(null)
 
+const isRecordingVoiceNote = ref(false)
+const mediaRecorderVoiceNote = ref<MediaRecorder | null>(null)
+const audioChunksVoiceNote = ref<Blob[]>([])
+const recordedVoiceNoteURL = ref<string | null>(null)
+const currentVoiceNote = ref<HTMLAudioElement | null>(null)
+
 const diceResult = ref<string>('')
 
 function goToConfig() {
@@ -185,6 +191,109 @@ function playRecording(){
 
 }
 
+async function startVoiceNoteRecording() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    audioChunksVoiceNote.value = []
+    recordedVoiceNoteURL.value = null
+
+    mediaRecorderVoiceNote.value = new MediaRecorder(stream)
+    mediaRecorderVoiceNote.value.ondataavailable = (e) => e.data.size && audioChunksVoiceNote.value.push(e.data)
+    mediaRecorderVoiceNote.value.onstop = () => {
+      const audioBlob = new Blob(audioChunksVoiceNote.value, { type: 'audio/wav' })
+      recordedVoiceNoteURL.value = URL.createObjectURL(audioBlob)
+    }
+
+    mediaRecorderVoiceNote.value.start()
+    isRecordingVoiceNote.value = true
+  } catch (err) {
+    console.error('Voice note recording failed', err)
+  }
+}
+
+function stopVoiceNoteRecording() {
+  mediaRecorderVoiceNote.value?.stop()
+  isRecordingVoiceNote.value = false
+}
+
+function playRecordingNote(){
+  if(!recordedVoiceNoteURL.value) return
+
+  if(!currentVoiceNote.value) {
+    currentVoiceNote.value = new Audio(recordedVoiceNoteURL.value)
+  }
+
+  currentVoiceNote.value.pause()
+  currentVoiceNote.value.currentTime = 0
+  currentVoiceNote.value.play()
+}
+
+
+async function uploadVoiceNote() {
+  if (!audioChunksVoiceNote.value.length) {
+    audioUploadStatus.value = 'No voice note recorded!'
+    return
+  }
+
+  const audioBlob = new Blob(audioChunksVoiceNote.value, { type: 'audio/wav' })
+  const formData = new FormData()
+  formData.append('audio', audioBlob, 'voice_note.wav')
+  //formData.append('player_id', store.currentPlayer?.id)
+  //formData.append('role', store.currentPlayer?.role)
+  //formData.append("playerName", store.currentPlayer?.name)
+
+  
+  try {
+    const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.UPLOAD_VOICE_NOTE}`, {
+      method: 'POST',
+      body: formData,
+    })
+
+    if (!response.ok) {
+      throw new Error('Upload failed')
+    }
+    const data = await response.json()
+    console.log('Voice note uploaded:', data)
+  } catch (err) {
+    console.error('Error uploading voice note:', err)
+  }
+
+}
+
+async function uploadVoiceNoteTest() {
+  if (!audioChunksVoiceNote.value.length) {
+    audioUploadStatus.value = 'No voice note recorded!'
+    return
+  }
+
+  
+  const audioBlob = new Blob(audioChunksVoiceNote.value, { type: 'audio/wav' })
+  const formData = new FormData()
+  formData.append('audio', audioBlob, 'voice_note.wav')
+  formData.append('player_id', store.currentPlayer?.id || 'test_player')
+  formData.append('player_name', store.currentPlayer?.name || 'Anonymous')
+
+  try {
+    const response = await fetch('http://localhost:8000/processAudioData/uploadVoiceNote', {
+      method: 'POST',
+      body: formData,
+    })
+
+    if (!response.ok) {
+      const text = await response.text()
+      console.error('Response text:', text)
+      throw new Error('Upload failed')
+    }
+
+    const data = await response.json()
+    console.log('Test upload response:', data)
+  } catch (err) {
+    console.error('Error uploading test:', err)
+  }
+}
+
+
+
 async function transcribeRecording() {
   if (!audioChunks.value.length){
     audioUploadStatus.value = 'No audio to transcribe !'
@@ -243,6 +352,26 @@ function rollDice(sides: number) {
           </li>
         </ul>
       </section>
+
+    <div class="content-section">
+        <h2>Record Your Voice Note</h2>
+        <button @click="startVoiceNoteRecording" v-if="!isRecordingVoiceNote" class="submit-button">
+          Start Recording
+        </button>
+        <button @click="stopVoiceNoteRecording" v-if="isRecordingVoiceNote" class="submit-button">
+          Stop Recording
+        </button>
+
+        <div v-if="isRecordingVoiceNote" class="output">
+          <p>Recording in progress...</p>
+        </div>
+
+        <div v-if="recordedVoiceNoteURL" class="play-button">
+          <button @click="playRecordingNote" class="submit-button">Play</button>
+          <button @click="uploadVoiceNoteTest" class="submit-button">Save Voice Note</button>
+
+        </div>
+      </div>
 
       <div class="content-section">
         <h2>Ask Something about the DnD-Session</h2>

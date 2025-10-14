@@ -11,6 +11,7 @@ export const SERVER_CONFIG = {
     CHANGE_CONFIG: '/config/changeConfig',
     CHECK_CONNECTION: '/health/checkConnection',
     WS_PLAYERS: '/ws/players',
+    UPLOAD_VOICE_NOTE: '/processAudioData/uploadVoiceNote',
   },
 }
 
