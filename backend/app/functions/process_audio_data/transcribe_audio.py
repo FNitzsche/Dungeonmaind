@@ -17,6 +17,35 @@ from app.domain.store import store
 
 from app.core.config import settings
 
+from pydub import AudioSegment
+from io import BytesIO
+import glob
+
+def combine_voice_notes_with_session(audio_bytes: bytes, voice_notes_dir="C:/Users/lilia/Desktop/Uni/GitHub/Dungeonmaind/backend/uploads/voice_notes") -> BytesIO:
+    # load voice notes
+    voice_files = sorted(glob.glob(os.path.join(voice_notes_dir, "*.wav")))
+    # List of player names with order
+    speaker_order = []  
+
+    combined_audio = AudioSegment.silent(duration=1000)
+    # combine all voice notes
+    for file_path in voice_files:
+        note = AudioSegment.from_file(file_path)
+        combined_audio += note + AudioSegment.silent(duration=500)  #pause inbetween voice notes
+        #extract player name from file
+        player_name = os.path.splitext(os.path.basename(file_path))[0]
+        speaker_order.append(player_name)
+
+    # add to the recorded session audio
+    session_audio = AudioSegment.from_file(BytesIO(audio_bytes))
+    combined_audio += session_audio
+
+    output_buffer = BytesIO()
+    combined_audio.export(output_buffer, format="wav")
+    output_buffer.seek(0)
+    return output_buffer, speaker_order
+
+
 def transcribe_audio(audio_bytes: bytes, batch_size=16):
 
     model_dir = os.getenv("WHISPERX_MODELS_DIR", None)
@@ -48,15 +77,29 @@ def transcribe_audio(audio_bytes: bytes, batch_size=16):
     # model_dir = "/path/"
     # model = whisperx.load_model("large-v2", device, compute_type=compute_type, download_root=model_dir)
 
+    #combine notes and session recording audio
+    print("Combining player voice notes with session audio...")
+    combined_audio_buffer, speaker_order = combine_voice_notes_with_session(audio_bytes)
+    speaker_map = {f"SPEAKER_{i:02d}": name for i, name in enumerate(speaker_order)} 
+    
+    print(speaker_map)
+
     # 2. Save bytes to a temporary file (required by whisperx.load_audio)
     print("Loading audio...")
-    with tempfile.NamedTemporaryFile(suffix=".mp3",delete=False) as temp_audio:
-        temp_audio.write(audio_bytes)
+    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as temp_audio:
+        temp_audio.write(combined_audio_buffer.read())
         temp_audio.flush()
         audio = whisperx.load_audio(temp_audio.name)
 
+    
+    # with tempfile.NamedTemporaryFile(suffix=".mp3",delete=False) as temp_audio:
+    #     temp_audio.write(audio_bytes)
+    #     temp_audio.flush()
+    #     audio = whisperx.load_audio(temp_audio.name)
+
     # 3. Transcribe
     result = model.transcribe(audio, batch_size=batch_size)
+    
     print(result["segments"])
     # delete model if low on GPU resources
     # import gc; import torch; gc.collect(); torch.cuda.empty_cache(); del model
@@ -80,12 +123,29 @@ def transcribe_audio(audio_bytes: bytes, batch_size=16):
     max_players = g.max_size
 
     #add min/max number of speakers
-    diarize_segments = diarize_model(audio)
-    diarize_model(audio, min_speakers=1, max_speakers=max_players)
+    diarize_segments = diarize_model(audio, min_speakers=1, max_speakers=max_players)
 
     result_b = whisperx.assign_word_speakers(diarize_segments, result_a)
     print(diarize_segments)
     print(result_b["segments"]) #segments are now assigned speaker IDs
-    
+
+    for segment in result_b["segments"]:
+        original_speaker = segment["speaker"]
+        player_name = speaker_map.get(original_speaker, "unkown")
+        segment["player_name"] = player_name
+        segment["speaker"] = player_name
+
     #next align speaker IDs with player IDs
     return result_b["segments"]
+
+#run only to test function
+# if __name__ == "__main__":
+#     # Load any mp3 file into bytes
+#     with open("C:/Users/lilia/Desktop/Uni/GitHub/Dungeonmaind/backend/app/functions/process_audio_data/test.mp3", "rb") as f:
+#         audio = f.read()
+
+#     segments = transcribe_audio(audio)
+    
+#     # Print transcription
+#     for seg in segments:
+#         print(f"{seg['start']:.2f} - {seg['end']:.2f} [{seg['speaker']}]: {seg['text']}")
