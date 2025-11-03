@@ -38,12 +38,14 @@ def combine_voice_notes_with_session(audio_bytes: bytes, voice_notes_dir="C:/Use
 
     # add to the recorded session audio
     session_audio = AudioSegment.from_file(BytesIO(audio_bytes))
+    # length of Voice Notes + pauses to later remove from transcribed audio
+    intro_duration_ms = len(combined_audio)  
     combined_audio += session_audio
 
     output_buffer = BytesIO()
     combined_audio.export(output_buffer, format="wav")
     output_buffer.seek(0)
-    return output_buffer, speaker_order
+    return output_buffer, speaker_order, intro_duration_ms
 
 
 def transcribe_audio(audio_bytes: bytes, batch_size=16):
@@ -79,7 +81,9 @@ def transcribe_audio(audio_bytes: bytes, batch_size=16):
 
     #combine notes and session recording audio
     print("Combining player voice notes with session audio...")
-    combined_audio_buffer, speaker_order = combine_voice_notes_with_session(audio_bytes)
+    combined_audio_buffer, speaker_order, intro_duration_ms = combine_voice_notes_with_session(audio_bytes)
+    intro_duration_s = intro_duration_ms / 1000.0  # Umwandeln in Sekunden
+
     speaker_map = {f"SPEAKER_{i:02d}": name for i, name in enumerate(speaker_order)} 
     
     print(speaker_map)
@@ -104,7 +108,7 @@ def transcribe_audio(audio_bytes: bytes, batch_size=16):
     # delete model if low on GPU resources
     # import gc; import torch; gc.collect(); torch.cuda.empty_cache(); del model
 
-    # 4. Align whisper output to improve the word-level timestamps in your transcription.
+    # 4. Align whisper output to improve the word-level timestamps in transcription.
     print("Aligning...")
     model_a, metadata = whisperx.load_align_model(language_code=result["language"], device=device)
     result_a = whisperx.align(result["segments"], model_a, metadata, audio, device, return_char_alignments=False)
@@ -123,7 +127,7 @@ def transcribe_audio(audio_bytes: bytes, batch_size=16):
     max_players = g.max_size
 
     #add min/max number of speakers
-    diarize_segments = diarize_model(audio, min_speakers=1, max_speakers=max_players)
+    diarize_segments = diarize_model(audio, min_speakers=1, max_speakers=2)
 
     result_b = whisperx.assign_word_speakers(diarize_segments, result_a)
     print(diarize_segments)
@@ -135,17 +139,22 @@ def transcribe_audio(audio_bytes: bytes, batch_size=16):
         segment["player_name"] = player_name
         segment["speaker"] = player_name
 
-    #next align speaker IDs with player IDs
-    return result_b["segments"]
+    #remove voice notes
+    filtered_segments = [seg for seg in result_b["segments"] if seg["start"] > intro_duration_s]
+
+    print(f"Removed intro (first {intro_duration_s:.2f} seconds). Remaining segments: {len(filtered_segments)}")
+
+    return filtered_segments
+
 
 #run only to test function
-# if __name__ == "__main__":
-#     # Load any mp3 file into bytes
-#     with open("C:/Users/lilia/Desktop/Uni/GitHub/Dungeonmaind/backend/app/functions/process_audio_data/test.mp3", "rb") as f:
-#         audio = f.read()
+if __name__ == "__main__":
+    # Load any mp3 file into bytes
+    with open("C:/Users/lilia/Desktop/Uni/GitHub/Dungeonmaind/backend/app/functions/process_audio_data/test.mp3", "rb") as f:
+        audio = f.read()
 
-#     segments = transcribe_audio(audio)
+    segments = transcribe_audio(audio)
     
-#     # Print transcription
-#     for seg in segments:
-#         print(f"{seg['start']:.2f} - {seg['end']:.2f} [{seg['speaker']}]: {seg['text']}")
+    # Print transcription
+    for seg in segments:
+        print(f"{seg['start']:.2f} - {seg['end']:.2f} [{seg['speaker']}]: {seg['text']}")
