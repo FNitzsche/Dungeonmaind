@@ -22,29 +22,65 @@ const currentMarkdownIndex = ref(0)
 const renderedMarkdown = ref('')
 
 async function handleQuestionSubmit() {
-  if (isLoading.value) return  // prevent spamming the button
-  isLoading.value = true
-  modelOutput.value = ''
+  if (isLoading.value) return; // prevent spamming the button
+  isLoading.value = true;
+  modelOutput.value = '';
+  modelOutputRendered.value = '';
+  backendMarkdown.value = [];
+  renderedMarkdown.value = '';
 
+  // Slash command for entity extraction
+  if (userInput.value.startsWith('/extract')) {
+    try {
+      const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.EXTRACT_ENTITIES}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          player_id: store.currentPlayer?.id,
+          input_string: userInput.value, // The input string is passed but not used by this endpoint
+          use_rulebook: false
+        }),
+      });
+      if (!response.ok) throw new Error(`Request failed with status ${response.status}`);
+
+      const entities = await response.json();
+      // Format the JSON with indentation and wrap in pre/code for display
+      const formattedJson = JSON.stringify(entities, null, 2);
+      modelOutput.value = formattedJson; // Keep the raw JSON here
+      // Wrap the formatted JSON in <pre><code> tags for correct HTML rendering
+      modelOutputRendered.value = `<pre><code>${formattedJson}</code></pre>`;
+
+    } catch (error) {
+      console.error('Error calling /extract_entities endpoint:', error);
+      const errorMessage = 'Error extracting entities: ' + error;
+      modelOutput.value = errorMessage;
+      modelOutputRendered.value = `<pre><code>${errorMessage}</code></pre>`;
+    } finally {
+      isLoading.value = false;
+    }
+    return; // End execution here for the slash command
+  }
+
+  // Existing logic for rulebook or general LLM
   if (askRulebook.value) {
     try {
       const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RULEBOOK_SEARCH}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ input_string: userInput.value }),
-      })
-      if (!response.ok) throw new Error(`Request failed with status ${response.status}`)
+      });
+      if (!response.ok) throw new Error(`Request failed with status ${response.status}`);
 
-      const markdownJson = await response.json()
-      backendMarkdown.value = markdownJson.markdown_texts || []
+      const markdownJson = await response.json();
+      backendMarkdown.value = markdownJson.markdown_texts || [];
       if (backendMarkdown.value.length > 0) {
-        currentMarkdownIndex.value = 0
-        renderedMarkdown.value = await marked.parse(backendMarkdown.value[0]) as string
+        currentMarkdownIndex.value = 0;
+        renderedMarkdown.value = await marked.parse(backendMarkdown.value[0]) as string;
       }
     } catch (error) {
-      console.error('Error calling Rulebook Search endpoint:', error)
+      console.error('Error calling Rulebook Search endpoint:', error);
     } finally {
-      isLoading.value = false //  unlock after done
+      isLoading.value = false; //  unlock after done
     }
   } else {
     try {
@@ -56,27 +92,23 @@ async function handleQuestionSubmit() {
           input_string: userInput.value,
           use_rulebook: askRulebook.value
         }),
-      })
-      if (!response.ok || !response.body) throw new Error(`Request failed with status ${response.status}`)
+      });
+      if (!response.ok || !response.body) throw new Error(`Request failed with status ${response.status}`);
 
-       // Removes any still shown previous rulebook searches.
-      backendMarkdown.value = []
-      renderedMarkdown.value = ''
-
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder('utf-8')
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
       while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        const chunk = decoder.decode(value, { stream: true })
-        modelOutput.value += chunk
-        modelOutputRendered.value = marked.parse(modelOutput.value) as string
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        modelOutput.value += chunk;
+        modelOutputRendered.value = marked.parse(modelOutput.value) as string;
       }
     } catch (error) {
-      console.error('Error calling LLM endpoint:', error)
-      modelOutput.value = 'Error calling model, error: ' + error
+      console.error('Error calling LLM endpoint:', error);
+      modelOutput.value = 'Error calling model, error: ' + error;
     } finally {
-      isLoading.value = false  //  unlock after done
+      isLoading.value = false;  //  unlock after done
     }
   }
 }
