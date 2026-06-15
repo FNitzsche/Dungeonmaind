@@ -18,7 +18,10 @@ async def run_custom_model(chat_history: list[dict]) -> AsyncGenerator[str, None
     payload = {
         "model": settings.llm_model,
         "messages": chat_history,
-        "stream": True
+        "stream": True,
+        "options": {
+            "temperature": 0.1
+        }
     }
 
     timeout = httpx.Timeout(connect=10.0, read=None, write=10.0, pool=None)
