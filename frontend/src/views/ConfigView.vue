@@ -1,4 +1,8 @@
 <script setup lang="ts">
+/**
+ * ConfigView – allows the leader to select LLM, transcription,
+ * and embedding models, and submit the changes to the backend.
+ */
 import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/session.ts'
@@ -24,7 +28,7 @@ const deleteTranscriptions = ref(false)
 const emit = defineEmits(['submit-success'])
 
 const errorHappend = ref(false)
-const errorMessage = ""
+const errorMessage = ''
 
 async function submitSelection() {
   isSubmitting.value = true
@@ -52,7 +56,6 @@ async function submitSelection() {
 function cancelSubmit() {
   emit('submit-success')
 }
-
 </script>
 
 <template>

@@ -1,4 +1,9 @@
 <script setup lang="ts">
+/**
+ * HomeView – the main game dashboard. Manages the WebSocket connection,
+ * player roster sync, and renders sub-components for questions, recording,
+ * audio upload, and the right rail (dice, abilities, join link).
+ */
 import { onMounted, onUnmounted, onBeforeUnmount, ref } from 'vue'
 import { useSessionStore } from '@/stores/session.ts'
 import { useRouter } from 'vue-router'
@@ -13,32 +18,38 @@ import RightRail from '@/views/HomeView/RightRail.vue'
 const router = useRouter()
 const store = useSessionStore()
 
-let socket: WebSocket | null = null;
-let manualClose = false;
-let connectionLost = false;
+let socket: WebSocket | null = null
+let manualClose = false
+let connectionLost = false
 
 function disconnectToLogin() {
-  manualClose = true;
-  try { socket?.close(1000, 'user acknowledged') } catch {}
-  socket = null;
+  manualClose = true
+  try {
+    socket?.close(1000, 'user acknowledged')
+  } catch {}
+  socket = null
 
-  store.forceLogout();
-  router.push({ name: 'login' });
+  store.forceLogout()
+  router.push({ name: 'login' })
 }
 
 function markConnectionLost(reason: string) {
-  if (connectionLost) return  // nur einmal auslösen
-  connectionLost = true;
+  if (connectionLost) return // nur einmal auslösen
+  connectionLost = true
 
   //Socket schließen (triggert onclose), aber Modal bleibt
-  manualClose = true;
-  try { socket?.close(4000, 'connection lost') } catch {}
-  socket = null;
+  manualClose = true
+  try {
+    socket?.close(4000, 'connection lost')
+  } catch {}
+  socket = null
 
   try {
-    window.confirm(`Verbindung zum Server unterbrochen.\n\n${reason}\n\nDu wirst jetzt zum Login weitergeleitet.`)
+    window.confirm(
+      `Verbindung zum Server unterbrochen.\n\n${reason}\n\nDu wirst jetzt zum Login weitergeleitet.`,
+    )
   } finally {
-    disconnectToLogin();
+    disconnectToLogin()
   }
 }
 
@@ -63,8 +74,8 @@ onMounted(() => {
     return
   }
 
-  connectionLost = false;
-  manualClose = false;
+  connectionLost = false
+  manualClose = false
 
   // Use wsUrl() to ensure ws/wss scheme, then attach query params
   const baseWs = wsUrl(apiBase(), SERVER_CONFIG.ENDPOINTS.WS_PLAYERS)
@@ -83,11 +94,15 @@ onMounted(() => {
     } catch (e) {
       console.error('loadPlayers failed', e)
     }
-  };
+  }
 
   socket.onmessage = (ev) => {
     let msg: any
-    try { msg = JSON.parse(ev.data) } catch { return }
+    try {
+      msg = JSON.parse(ev.data)
+    } catch {
+      return
+    }
 
     if (msg.type === 'join') {
       // centralized in store
@@ -106,28 +121,30 @@ onMounted(() => {
   socket.onclose = (ev) => {
     // 4001 = vom Server gekickt
     if (ev.code === 4001) {
-      store.forceLogout();
-      router.push({ name: 'login' });
-      socket = null;
+      store.forceLogout()
+      router.push({ name: 'login' })
+      socket = null
       return
     }
-    socket = null;
+    socket = null
 
     // Wenn nicht bewusst geschlossen, ist es "verbindung verloren"
     if (!manualClose) {
       markConnectionLost(`Websocket closed (code ${ev.code || 'n/a'})`)
     }
-  };
+  }
 
   socket.onerror = () => {
     markConnectionLost('Websocket error')
   }
-});
+})
 
 onBeforeUnmount(() => {
-  manualClose = true;
-  try { socket?.close(1000, 'unmount') } catch {}
-  socket = null;
+  manualClose = true
+  try {
+    socket?.close(1000, 'unmount')
+  } catch {}
+  socket = null
 })
 </script>
 
@@ -141,12 +158,12 @@ onBeforeUnmount(() => {
       <!-- Left: main LLM -->
       <QuestionSection />
 
-      <hr style="margin: 2rem 0" v-if="store.isLeader"/>
+      <hr style="margin: 2rem 0" v-if="store.isLeader" />
 
       <!-- Leader-only: recording -->
       <RecordingSection v-if="store.isLeader" />
 
-      <hr style="margin: 2rem 0" v-if="store.isLeader"/>
+      <hr style="margin: 2rem 0" v-if="store.isLeader" />
 
       <!-- Leader-only: upload -->
       <AudioUploadSection v-if="store.isLeader" />
@@ -191,5 +208,4 @@ onBeforeUnmount(() => {
     align-items: center;
   }
 }
-
 </style>

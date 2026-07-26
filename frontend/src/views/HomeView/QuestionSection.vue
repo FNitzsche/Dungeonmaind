@@ -1,11 +1,14 @@
 <script setup lang="ts">
+/**
+ * QuestionSection – allows the user to ask the LLM a question about the D&D session.
+ * Supports streaming text responses and optional rulebook search results.
+ */
 import { ref } from 'vue'
 import { SERVER_CONFIG } from '@/config/config'
 import { marked } from 'marked'
 import { useSessionStore } from '@/stores/session.ts'
 
 /** Holds LLM Question Section */
-
 
 const store = useSessionStore()
 
@@ -22,24 +25,27 @@ const currentMarkdownIndex = ref(0)
 const renderedMarkdown = ref('')
 
 async function handleQuestionSubmit() {
-  if (isLoading.value) return  // prevent spamming the button
+  if (isLoading.value) return // prevent spamming the button
   isLoading.value = true
   modelOutput.value = ''
 
   if (askRulebook.value) {
     try {
-      const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RULEBOOK_SEARCH}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input_string: userInput.value }),
-      })
+      const response = await fetch(
+        `${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RULEBOOK_SEARCH}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ input_string: userInput.value }),
+        },
+      )
       if (!response.ok) throw new Error(`Request failed with status ${response.status}`)
 
       const markdownJson = await response.json()
       backendMarkdown.value = markdownJson.markdown_texts || []
       if (backendMarkdown.value.length > 0) {
         currentMarkdownIndex.value = 0
-        renderedMarkdown.value = await marked.parse(backendMarkdown.value[0]) as string
+        renderedMarkdown.value = (await marked.parse(backendMarkdown.value[0])) as string
       }
     } catch (error) {
       console.error('Error calling Rulebook Search endpoint:', error)
@@ -54,12 +60,13 @@ async function handleQuestionSubmit() {
         body: JSON.stringify({
           player_id: store.currentPlayer?.id,
           input_string: userInput.value,
-          use_rulebook: askRulebook.value
+          use_rulebook: askRulebook.value,
         }),
       })
-      if (!response.ok || !response.body) throw new Error(`Request failed with status ${response.status}`)
+      if (!response.ok || !response.body)
+        throw new Error(`Request failed with status ${response.status}`)
 
-       // Removes any still shown previous rulebook searches.
+      // Removes any still shown previous rulebook searches.
       backendMarkdown.value = []
       renderedMarkdown.value = ''
 
@@ -76,7 +83,7 @@ async function handleQuestionSubmit() {
       console.error('Error calling LLM endpoint:', error)
       modelOutput.value = 'Error calling model, error: ' + error
     } finally {
-      isLoading.value = false  //  unlock after done
+      isLoading.value = false //  unlock after done
     }
   }
 }
@@ -84,14 +91,18 @@ async function handleQuestionSubmit() {
 function showNextMarkdown() {
   if (currentMarkdownIndex.value < backendMarkdown.value.length - 1) {
     currentMarkdownIndex.value++
-    renderedMarkdown.value = marked.parse(backendMarkdown.value[currentMarkdownIndex.value]) as string
+    renderedMarkdown.value = marked.parse(
+      backendMarkdown.value[currentMarkdownIndex.value],
+    ) as string
   }
 }
 
 function showPrevMarkdown() {
   if (currentMarkdownIndex.value > 0) {
     currentMarkdownIndex.value--
-    renderedMarkdown.value = marked.parse(backendMarkdown.value[currentMarkdownIndex.value]) as string
+    renderedMarkdown.value = marked.parse(
+      backendMarkdown.value[currentMarkdownIndex.value],
+    ) as string
   }
 }
 </script>
@@ -106,10 +117,11 @@ function showPrevMarkdown() {
       class="input-field"
       @keyup.enter="handleQuestionSubmit"
     />
-    <label class="secondary-medieval-text"
-      style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;"
+    <label
+      class="secondary-medieval-text"
+      style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer"
     >
-    <input type="checkbox" v-model="askRulebook" />
+      <input type="checkbox" v-model="askRulebook" />
       show matching rulebook pages
     </label>
 
@@ -123,9 +135,7 @@ function showPrevMarkdown() {
     <div v-if="backendMarkdown.length" class="markdown-output scrollable-panel">
       <h3>Relevant SRD article</h3>
       <div class="markdown-navigation">
-        <button @click="showPrevMarkdown" :disabled="currentMarkdownIndex === 0">
-          Previous
-        </button>
+        <button @click="showPrevMarkdown" :disabled="currentMarkdownIndex === 0">Previous</button>
         <span>
           {{ currentMarkdownIndex + 1 }} /
           {{ backendMarkdown.length }}

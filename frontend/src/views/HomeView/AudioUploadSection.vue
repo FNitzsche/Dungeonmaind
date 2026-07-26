@@ -1,11 +1,11 @@
 <script setup lang="ts">
+/**
+ * AudioUploadSection – allows the leader to upload a pre-recorded audio file
+ * for transcription by the backend.
+ */
 import { ref } from 'vue'
 import { SERVER_CONFIG } from '@/config/config'
 
-/** Holds Audio Upload Section */
-
-
-/** Audio (file upload) */
 const selectedAudioFile = ref<File | null>(null)
 const audioUploadStatus = ref<string>('')
 
@@ -40,7 +40,7 @@ async function handleAudioUpload() {
 
 function onAudioFileChange(event: Event) {
   const target = event.target as HTMLInputElement
-  selectedAudioFile.value = (target?.files && target.files.length > 0) ? target.files[0] : null
+  selectedAudioFile.value = target?.files && target.files.length > 0 ? target.files[0] : null
 }
 </script>
 

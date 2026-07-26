@@ -1,0 +1,103 @@
+site_name: Dungeon M-AI-nd
+site_description: AI-assisted Dungeons & Dragons session manager with local transcription, vector search, and LLM-powered Q&A
+repo_url: https://github.com/mansabhairodagi/Dungeonmaind
+edit_uri: blob/main/docs/
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+    - scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.expand
+    - navigation.indexes
+    - content.code.copy
+    - content.code.annotate
+    - search.highlight
+    - search.suggest
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths: [backend]
+          options:
+            show_source: true
+            show_bases: true
+            show_inheritance_diagram: true
+            show_inheritance_diagram_direction: TD
+            show_root_heading: true
+            show_root_toc_entry: true
+            show_category_heading: true
+            show_symbol_type_heading: true
+            docstring_style: google
+            group_by_category: true
+            merge_init_into_class: true
+            inherited_members: false
+            members_order: source
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Architecture: architecture.md
+  - Backend API Reference:
+    - API Overview: backend/overview.md
+    - Routers:
+      - backend/routers/players.md
+      - backend/routers/timeline.md
+      - backend/routers/config.md
+      - backend/routers/llm.md
+      - backend/routers/process_audio.md
+      - backend/routers/export_import.md
+      - backend/routers/rulebook.md
+      - backend/routers/health.md
+      - backend/routers/websocket.md
+    - Domain Models: backend/domain.md
+    - Core Services: backend/core.md
+    - Mappers: backend/mappers.md
+    - Functions:
+      - backend/functions/embedding.md
+      - backend/functions/llm.md
+      - backend/functions/audio.md
+
+      - backend/functions/export_import.md
+  - Frontend:
+    - Overview: frontend/overview.md
+    - Views: frontend/views.md
+    - Stores: frontend/stores.md
+    - API Layer: frontend/api.md
+    - Router: frontend/router.md
+  - Configuration: configuration.md
+  - Docker Deployment: docker.md

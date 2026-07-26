@@ -1,8 +1,12 @@
 <script setup lang="ts">
+/**
+ * RightRail – the right-hand sidebar containing the join link,
+ * dice widget, and abilities/health section.
+ */
 import { useSessionStore } from '@/stores/session.ts'
 import DiceWidget from '../HomeView/DiceWidget.vue'
 import AbilitiesSection from '../HomeView/AbilitiesSection.vue'
-import JoinLink from "@/views/HomeView/JoinLink.vue";
+import JoinLink from '@/views/HomeView/JoinLink.vue'
 
 const store = useSessionStore()
 </script>
