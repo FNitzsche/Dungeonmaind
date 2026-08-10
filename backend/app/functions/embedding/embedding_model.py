@@ -62,18 +62,123 @@ def embedding_search(query: str, source=False, persist_directory=None):
 
     return results
 
+def get_all_transcription_documents(
+    persist_directory=None,
+) -> list[Document]:
+    """
+    Return all transcription documents currently stored in ChromaDB.
 
-def embedd_transcriptions(embedding_text: list, speakers: list[str], persist_directory=None):
+    Unlike similarity search, this retrieves every transcription segment
+    so the complete session can be arranged chronologically.
+    """
 
     if persist_directory is None:
         persist_directory = settings.chroma_db_path
 
-    if len(embedding_text) != len(speakers):
-        raise ValueError(
-            f"embedding_text ({len(embedding_text)}) and speakers ({len(speakers)}) must have the same length"
+    if not os.path.exists(
+        os.path.join(persist_directory, "chroma.sqlite3")
+    ):
+        return []
+
+    embedding_model = SentenceTransformerEmbeddings(
+        model_name=settings.embedding_model
+    )
+
+    vectorstore = Chroma(
+        persist_directory=persist_directory,
+        embedding_function=embedding_model,
+    )
+
+    collection = vectorstore._collection
+
+    stored_data = collection.get(
+        where={"source": "transcriptions"},
+        include=["documents", "metadatas"],
+    )
+
+    documents = stored_data.get("documents") or []
+    metadatas = stored_data.get("metadatas") or []
+
+    result: list[Document] = []
+
+    for text, metadata in zip(documents, metadatas):
+        if not text:
+            continue
+
+        result.append(
+            Document(
+                page_content=text,
+                metadata=metadata or {},
+            )
         )
 
-    # Load embedding model locally
+    return sorted(
+        result,
+        key=lambda document: float(
+            document.metadata.get("start_time", 0.0)
+        ),
+    )
+
+# def embedd_transcriptions(embedding_text: list, speakers: list[str], persist_directory=None):
+
+#     if persist_directory is None:
+#         persist_directory = settings.chroma_db_path
+
+#     if len(embedding_text) != len(speakers):
+#         raise ValueError(
+#             f"embedding_text ({len(embedding_text)}) and speakers ({len(speakers)}) must have the same length"
+#         )
+
+#     # Load embedding model locally
+#     embedding_model = SentenceTransformerEmbeddings(
+#         model_name=settings.embedding_model
+#     )
+
+#     documents = [
+#         Document(
+#             page_content=text,
+#             metadata={"source": "transcriptions",
+#                       "player_id": speakers[i],
+#                       "session_id": "none",  # Update here later
+#                       "path": "none"}
+#         )
+#         for i, text in enumerate(embedding_text)
+#     ]
+
+#     write_to_ChromaDB(persist_directory, documents, embedding_model)
+
+
+def embedd_transcriptions(
+    embedding_text: list[str],
+    speakers: list[str],
+    start_times: list[float],
+    end_times: list[float],
+    persist_directory=None
+):
+    """
+    Store transcription segments in ChromaDB together with their
+    speaker and audio timestamps.
+
+    The text is converted into an embedding. The original text and
+    metadata remain available when the document is retrieved later.
+    """
+
+    if persist_directory is None:
+        persist_directory = settings.chroma_db_path
+
+    lengths = {
+        len(embedding_text),
+        len(speakers),
+        len(start_times),
+        len(end_times),
+    }
+
+    if len(lengths) != 1:
+        raise ValueError(
+            "embedding_text, speakers, start_times and end_times "
+            "must have the same length"
+        )
+
     embedding_model = SentenceTransformerEmbeddings(
         model_name=settings.embedding_model
     )
@@ -81,15 +186,23 @@ def embedd_transcriptions(embedding_text: list, speakers: list[str], persist_dir
     documents = [
         Document(
             page_content=text,
-            metadata={"source": "transcriptions",
-                      "player_id": speakers[i],
-                      "session_id": "none",  # Update here later
-                      "path": "none"}
+            metadata={
+                "source": "transcriptions",
+                "player_id": speakers[i],
+                "session_id": "none",
+                "path": "none",
+                "start_time": float(start_times[i]),
+                "end_time": float(end_times[i]),
+            },
         )
         for i, text in enumerate(embedding_text)
     ]
 
-    write_to_ChromaDB(persist_directory, documents, embedding_model)
+    write_to_ChromaDB(
+        persist_directory,
+        documents,
+        embedding_model
+    )
 
 
 def embedd_rulebook(embedding_text: list, txt_paths: dict, persist_directory=None):
@@ -395,6 +508,12 @@ async def embedding_search_on_chat_history(query: str, query_embedding: list[flo
         np.array(a["embedded_content"])
         for u, a in paired_entries if a["embedded_content"] is not None
     ]
+
+    if not user_embeddings:
+        print(
+            f"No chat-history embeddings found for player: {player_id}"
+        )
+        return []
 
     user_embeddings_np = np.stack(user_embeddings)
     assistant_embeddings_np = np.stack(assistant_embeddings)

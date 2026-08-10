@@ -1,97 +1,254 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { SERVER_CONFIG } from '@/config/config'
 import { marked } from 'marked'
-import { useSessionStore } from '@/stores/session.ts'
 
-/** Holds LLM Question Section */
-
+import { SERVER_CONFIG } from '@/config/config'
+import { useSessionStore } from '@/stores/session'
 
 const store = useSessionStore()
 
-/** UI state */
-const userInput = ref<string>('')
-const modelOutput = ref<string>('')
-const modelOutputRendered = ref<string>('')
-const isLoading = ref<boolean>(false)
-const askRulebook = ref<boolean>(false)
+const userInput = ref('')
+const modelOutput = ref('')
+const modelOutputRendered = ref('')
+const isLoading = ref(false)
+const askRulebook = ref(false)
 
-// Rulebook markdown
 const backendMarkdown = ref<string[]>([])
 const currentMarkdownIndex = ref(0)
 const renderedMarkdown = ref('')
 
-async function handleQuestionSubmit() {
-  if (isLoading.value) return  // prevent spamming the button
-  isLoading.value = true
-  modelOutput.value = ''
+async function handleQuestionSubmit(): Promise<void> {
+  if (isLoading.value) {
+    return
+  }
+
+  const question = userInput.value.trim()
+
+  if (!question) {
+    modelOutput.value = 'Please enter a question.'
+    modelOutputRendered.value = marked.parse(
+      modelOutput.value,
+    ) as string
+
+    return
+  }
 
   if (askRulebook.value) {
-    try {
-      const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RULEBOOK_SEARCH}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input_string: userInput.value }),
-      })
-      if (!response.ok) throw new Error(`Request failed with status ${response.status}`)
+    await searchRulebook(question)
+    return
+  }
 
-      const markdownJson = await response.json()
-      backendMarkdown.value = markdownJson.markdown_texts || []
-      if (backendMarkdown.value.length > 0) {
-        currentMarkdownIndex.value = 0
-        renderedMarkdown.value = await marked.parse(backendMarkdown.value[0]) as string
-      }
-    } catch (error) {
-      console.error('Error calling Rulebook Search endpoint:', error)
-    } finally {
-      isLoading.value = false //  unlock after done
-    }
-  } else {
-    try {
-      const response = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RUN_LLM}`, {
+  await askSessionQuestion(question)
+}
+
+async function askSessionQuestion(
+  question: string,
+): Promise<void> {
+  const playerId = store.currentPlayer?.id
+
+  if (!playerId) {
+    modelOutput.value =
+      'Your player session is missing. Please leave and join the session again.'
+
+    modelOutputRendered.value = marked.parse(
+      modelOutput.value,
+    ) as string
+
+    return
+  }
+
+  isLoading.value = true
+  modelOutput.value = ''
+  modelOutputRendered.value = ''
+
+  backendMarkdown.value = []
+  renderedMarkdown.value = ''
+
+  try {
+    const response = await fetch(
+      `${SERVER_CONFIG.BASE_URL}` +
+      `${SERVER_CONFIG.ENDPOINTS.RUN_LLM}`,
+      {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
-          player_id: store.currentPlayer?.id,
-          input_string: userInput.value,
-          use_rulebook: askRulebook.value
+          player_id: playerId,
+          input_string: question,
+          use_rulebook: false,
         }),
-      })
-      if (!response.ok || !response.body) throw new Error(`Request failed with status ${response.status}`)
+      },
+    )
 
-       // Removes any still shown previous rulebook searches.
-      backendMarkdown.value = []
-      renderedMarkdown.value = ''
+    if (!response.ok) {
+      let errorMessage =
+        `Request failed with status ${response.status}`
 
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder('utf-8')
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        const chunk = decoder.decode(value, { stream: true })
-        modelOutput.value += chunk
-        modelOutputRendered.value = marked.parse(modelOutput.value) as string
+      try {
+        const errorBody = await response.json()
+
+        if (typeof errorBody?.detail === 'string') {
+          errorMessage = errorBody.detail
+        } else if (Array.isArray(errorBody?.detail)) {
+          errorMessage = errorBody.detail
+            .map(
+              (item: {
+                loc?: Array<string | number>
+                msg?: string
+              }) => {
+                const location =
+                  item.loc?.join(' → ') ?? 'request'
+
+                return `${location}: ${item.msg ?? 'Invalid value'}`
+              },
+            )
+            .join(', ')
+        }
+      } catch {
+        // Keep the fallback error message.
       }
-    } catch (error) {
-      console.error('Error calling LLM endpoint:', error)
-      modelOutput.value = 'Error calling model, error: ' + error
-    } finally {
-      isLoading.value = false  //  unlock after done
+
+      throw new Error(errorMessage)
     }
+
+    if (!response.body) {
+      throw new Error(
+        'The server returned an empty response.',
+      )
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder('utf-8')
+
+    while (true) {
+      const { done, value } = await reader.read()
+
+      if (done) {
+        break
+      }
+
+      const chunk = decoder.decode(
+        value,
+        {
+          stream: true,
+        },
+      )
+
+      modelOutput.value += chunk
+
+      modelOutputRendered.value = marked.parse(
+        modelOutput.value,
+      ) as string
+    }
+
+    if (!modelOutput.value.trim()) {
+      modelOutput.value =
+        'The model returned an empty answer.'
+
+      modelOutputRendered.value = marked.parse(
+        modelOutput.value,
+      ) as string
+    }
+  } catch (error) {
+    console.error(
+      'Error calling LLM endpoint:',
+      error,
+    )
+
+    modelOutput.value =
+      error instanceof Error
+        ? `Error: ${error.message}`
+        : 'An unknown error occurred.'
+
+    modelOutputRendered.value = marked.parse(
+      modelOutput.value,
+    ) as string
+  } finally {
+    isLoading.value = false
   }
 }
 
-function showNextMarkdown() {
-  if (currentMarkdownIndex.value < backendMarkdown.value.length - 1) {
-    currentMarkdownIndex.value++
-    renderedMarkdown.value = marked.parse(backendMarkdown.value[currentMarkdownIndex.value]) as string
+async function searchRulebook(
+  question: string,
+): Promise<void> {
+  isLoading.value = true
+  modelOutput.value = ''
+  modelOutputRendered.value = ''
+
+  try {
+    const response = await fetch(
+      `${SERVER_CONFIG.BASE_URL}` +
+      `${SERVER_CONFIG.ENDPOINTS.RULEBOOK_SEARCH}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          input_string: question,
+        }),
+      },
+    )
+
+    if (!response.ok) {
+      throw new Error(
+        `Request failed with status ${response.status}`,
+      )
+    }
+
+    const markdownJson = await response.json()
+
+    backendMarkdown.value =
+      markdownJson.markdown_texts || []
+
+    if (backendMarkdown.value.length > 0) {
+      currentMarkdownIndex.value = 0
+
+      renderedMarkdown.value = await marked.parse(
+        backendMarkdown.value[0],
+      ) as string
+    } else {
+      renderedMarkdown.value =
+        '<p>No matching rulebook pages were found.</p>'
+    }
+  } catch (error) {
+    console.error(
+      'Error calling Rulebook Search endpoint:',
+      error,
+    )
+
+    renderedMarkdown.value =
+      '<p>Rulebook search failed.</p>'
+  } finally {
+    isLoading.value = false
   }
 }
 
-function showPrevMarkdown() {
+function showNextMarkdown(): void {
+  if (
+    currentMarkdownIndex.value <
+    backendMarkdown.value.length - 1
+  ) {
+    currentMarkdownIndex.value += 1
+
+    renderedMarkdown.value = marked.parse(
+      backendMarkdown.value[
+        currentMarkdownIndex.value
+      ],
+    ) as string
+  }
+}
+
+function showPrevMarkdown(): void {
   if (currentMarkdownIndex.value > 0) {
-    currentMarkdownIndex.value--
-    renderedMarkdown.value = marked.parse(backendMarkdown.value[currentMarkdownIndex.value]) as string
+    currentMarkdownIndex.value -= 1
+
+    renderedMarkdown.value = marked.parse(
+      backendMarkdown.value[
+        currentMarkdownIndex.value
+      ],
+    ) as string
   }
 }
 </script>
@@ -99,81 +256,122 @@ function showPrevMarkdown() {
 <template>
   <div class="content-section">
     <h2>Ask Something about the DnD-Session</h2>
+
     <input
       v-model="userInput"
       type="text"
       placeholder="Type something..."
       class="input-field"
+      :disabled="isLoading"
       @keyup.enter="handleQuestionSubmit"
     />
-    <label class="secondary-medieval-text"
-      style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;"
+
+    <label
+      class="secondary-medieval-text"
+      style="
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        cursor: pointer;
+      "
     >
-    <input type="checkbox" v-model="askRulebook" />
-      show matching rulebook pages
+      <input
+        v-model="askRulebook"
+        type="checkbox"
+        :disabled="isLoading"
+      />
+
+      Show matching rulebook pages
     </label>
 
-    <button @click="handleQuestionSubmit" class="submit-button" :disabled="isLoading">
+    <button
+      type="button"
+      class="submit-button"
+      :disabled="isLoading || !userInput.trim()"
+      @click="handleQuestionSubmit"
+    >
       {{ isLoading ? 'Loading...' : 'Submit' }}
     </button>
-    <div v-if="modelOutput" class="markdown-output">
+
+    <div
+      v-if="modelOutput"
+      class="markdown-output"
+    >
       <h3>Model Output:</h3>
+
       <div v-html="modelOutputRendered"></div>
     </div>
-    <div v-if="backendMarkdown.length" class="markdown-output scrollable-panel">
+
+    <div
+      v-if="backendMarkdown.length"
+      class="markdown-output scrollable-panel"
+    >
       <h3>Relevant SRD article</h3>
+
       <div class="markdown-navigation">
-        <button @click="showPrevMarkdown" :disabled="currentMarkdownIndex === 0">
+        <button
+          type="button"
+          :disabled="currentMarkdownIndex === 0"
+          @click="showPrevMarkdown"
+        >
           Previous
         </button>
+
         <span>
-          {{ currentMarkdownIndex + 1 }} /
+          {{ currentMarkdownIndex + 1 }}
+          /
           {{ backendMarkdown.length }}
         </span>
+
         <button
+          type="button"
+          :disabled="
+            currentMarkdownIndex ===
+            backendMarkdown.length - 1
+          "
           @click="showNextMarkdown"
-          :disabled="currentMarkdownIndex === backendMarkdown.length - 1"
         >
           Next
         </button>
       </div>
+
       <div v-html="renderedMarkdown"></div>
     </div>
   </div>
 </template>
 
 <style src="@/assets/styles.css"></style>
+
 <style scoped>
-/* Markdown styles */
 :deep(.markdown-output) {
-  font-family: 'MedievalSharp', cursive;
-  color: #392401;
-  line-height: 1.5;
   margin-top: 1rem;
+  color: #392401;
+  font-family: 'MedievalSharp', cursive;
+  line-height: 1.5;
 }
 
 :deep(.markdown-output h1) {
-  font-size: 2rem;
-  color: #1a3b1a;
-  border-bottom: 2px solid #392401;
-  padding-bottom: 0.3rem;
   margin-top: 1rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 2px solid #392401;
+  color: #1a3b1a;
+  font-size: 2rem;
 }
 
 :deep(.markdown-output h2) {
-  font-size: 1.5rem;
-  color: #2a4b2a;
-  border-bottom: 1px solid #392401;
-  padding-bottom: 0.2rem;
   margin-top: 1rem;
+  padding-bottom: 0.2rem;
+  border-bottom: 1px solid #392401;
+  color: #2a4b2a;
+  font-size: 1.5rem;
 }
 
 :deep(.markdown-output h3),
 :deep(.markdown-output h4),
 :deep(.markdown-output h5),
 :deep(.markdown-output h6) {
-  color: #3a5b3a;
   margin-top: 0.8rem;
+  color: #3a5b3a;
   font-weight: bold;
 }
 
@@ -187,24 +385,17 @@ function showPrevMarkdown() {
   font-style: italic;
 }
 
-:deep(.markdown-output strong em),
-:deep(.markdown-output em strong) {
-  color: #800080;
-  font-weight: bold;
-  font-style: italic;
-}
-
 :deep(.markdown-output table) {
   width: 100%;
-  border-collapse: collapse;
   margin: 0.5rem 0;
+  border-collapse: collapse;
   font-size: 0.95rem;
 }
 
 :deep(.markdown-output th),
 :deep(.markdown-output td) {
-  border: 1px solid #392401;
   padding: 0.3rem 0.5rem;
+  border: 1px solid #392401;
   text-align: center;
 }
 
@@ -221,22 +412,15 @@ function showPrevMarkdown() {
   margin: 0.4rem 0;
 }
 
-:deep(.markdown-output h6) {
-  font-style: italic;
-  color: #4b2e2e;
-  margin-top: 0.5rem;
-}
-
 :deep(.scrollable-panel) {
-  max-height: 400px;
+  box-sizing: border-box;
   max-width: 100%;
-  overflow-x: auto;
-  overflow-y: auto;
+  max-height: 400px;
+  overflow: auto;
   padding: 1rem;
   border: 1px solid #ccc;
   border-radius: 8px;
   background-color: rgba(110, 97, 50, 0.7);
-  box-sizing: border-box;
 }
 
 :deep(.markdown-navigation) {

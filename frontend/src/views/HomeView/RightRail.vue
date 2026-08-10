@@ -22,72 +22,30 @@ const store = useSessionStore()
 <style scoped>
 /* Right rail layout */
 .right-rail {
-  position: fixed;
-  right: 15%;
-  width: 540px;
-  z-index: 900;
+  position: static;
+  width: 100%;
+  min-width: 0;
   box-sizing: border-box;
   color: #392401;
   font-family: 'MedievalSharp', cursive;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  overflow: visible;
 }
 
-.right-rail::-webkit-scrollbar {
-  display: none;
-}
-
-/* Leader-Version: füllt vertikal den Bildschirmbereich */
-.right-rail--leader {
-  top: 60px;
-  bottom: 5px;
-  padding-right: 0.5rem;
-}
-
-/* Player-Version: fixed */
-.right-rail--member {
-  top: 60px;
-  bottom: 5px;
-  padding-right: 0.5rem;
-}
-
-/* Gemeinsames Layout innen: Cards untereinander mit Abstand */
 .right-rail__inner {
-  padding-top: 100px;
   display: flex;
   flex-direction: column;
   gap: 2rem;
+  padding-top: 0;
 }
 
-/* Nur Leader: künstlicher Offset nach unten, damit die Box optisch nicht direkt unter dem Header klebt */
 .right-rail__inner--leader {
-  padding-top: 80px;
+  padding-top: 0;
 }
 
-/* Responsive design */
-@media (max-width: 1300px) {
-  .right-rail {
-    position: static;
-    right: auto;
-    top: auto;
-    bottom: auto;
-    width: auto;
-    padding-right: 0;
-  }
-
-  .right-rail--leader,
-  .right-rail--member {
-    overflow: visible;
-  }
-
-  .right-rail__inner {
-    padding-top: 60px;
-  }
-
+@media (max-width: 1100px) {
+  .right-rail__inner,
   .right-rail__inner--leader {
-    padding-top: 20px;
+    padding-top: 0;
   }
 }
 </style>
