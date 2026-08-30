@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import * as api from '@/api/playersAPI';
 import type { PlayerOut, Role, Hp, AbilityScores } from '@/api/playersAPI';
+import { SERVER_CONFIG } from '@/config/config'
 
 export const useSessionStore = defineStore('session', () => {
   /* State */
@@ -9,6 +10,8 @@ export const useSessionStore = defineStore('session', () => {
   const players = ref<PlayerOut[]>([]);
   const backendUrl = ref<string | null>(hydrateBackendUrl());
   const localNetworkIP = ref<string | null>(hydrateLocalNetworkIP());
+  const playerSocket = ref<WebSocket | null>(null)
+  const socketManualClose = ref(false)
 
   /* Getters */
   const isLeader = computed(() => currentPlayer.value?.role === 'leader');
@@ -54,17 +57,33 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
-  function syncCurrentFromList(list: PlayerOut[]) {
-    const id = currentPlayer.value?.id;
-    if (!id) return;
-    const fresh = list.find(p => p.id === id);
-    if (fresh) {
-      currentPlayer.value = fresh;
-      persistPlayer(fresh);
-    } else {
-      currentPlayer.value = null;
-      removePersistedPlayer();
+  function syncCurrentFromList(
+    list: PlayerOut[],
+  ): void {
+    const id = currentPlayer.value?.id
+  
+    if (!id) {
+      return
     }
+  
+    const fresh = list.find(
+      (player) => player.id === id,
+    )
+  
+    if (fresh) {
+      currentPlayer.value = fresh
+      persistPlayer(fresh)
+    }
+  
+    /*
+     * Do not delete the current player merely because it is
+     * temporarily absent from one player-list response.
+     *
+     * The player session should only be removed after:
+     * - an explicit leave,
+     * - a server kick,
+     * - or a confirmed missing-player response.
+     */
   }
 
   function persistPlayer(p: PlayerOut | null) {
@@ -160,11 +179,18 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   async function leave() {
-    if (!currentPlayer.value) return;
+    if (!currentPlayer.value) {
+      return
+    }
+
+    disconnectPlayerSocket()
+
     try {
-      await api.leave(currentPlayer.value.id);
+      await api.leave(
+        currentPlayer.value.id,
+      )
     } finally {
-      clearSession();
+      clearSession()
     }
   }
 
@@ -191,11 +217,14 @@ export const useSessionStore = defineStore('session', () => {
   /* Session / logout helpers */
 
   function clearSession() {
-    currentPlayer.value = null;
-    players.value = [];
-    backendUrl.value = null;
-    localNetworkIP.value = null;
-    clearPersist();
+    disconnectPlayerSocket()
+
+    currentPlayer.value = null
+    players.value = []
+    backendUrl.value = null
+    localNetworkIP.value = null
+
+    clearPersist()
   }
 
   // Used e.g. when WS close code 4001 (kicked)
@@ -233,6 +262,149 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
+  function apiBase(): string {
+    return backendUrl.value ?? SERVER_CONFIG.BASE_URL
+  }
+
+  function wsUrl(
+    baseHttpUrl: string,
+    path: string,
+  ): string {
+    const url = new URL(baseHttpUrl)
+
+    url.protocol =
+      url.protocol === 'https:'
+        ? 'wss:'
+        : 'ws:'
+
+    url.pathname = path.startsWith('/')
+      ? path
+      : `/${path}`
+
+    return url.toString()
+  }
+
+  async function connectPlayerSocket(): Promise<void> {
+    const player = currentPlayer.value
+
+    if (!player) {
+      return
+    }
+
+    if (
+      playerSocket.value &&
+      (
+        playerSocket.value.readyState === WebSocket.OPEN ||
+        playerSocket.value.readyState === WebSocket.CONNECTING
+      )
+    ) {
+      return
+    }
+
+    socketManualClose.value = false
+
+    const baseWs = wsUrl(
+      apiBase(),
+      SERVER_CONFIG.ENDPOINTS.WS_PLAYERS,
+    )
+
+    const url = new URL(baseWs)
+
+    url.search = new URLSearchParams({
+      player_id: player.id,
+      name: player.name,
+      role: player.role,
+    }).toString()
+
+    const socket = new WebSocket(
+      url.toString(),
+    )
+
+    playerSocket.value = socket
+
+    socket.onopen = async () => {
+      try {
+        await loadPlayers()
+      } catch (error) {
+        console.error(
+          'Loading players failed:',
+          error,
+        )
+      }
+    }
+
+    socket.onmessage = (event) => {
+      let message: any
+
+      try {
+        message = JSON.parse(event.data)
+      } catch {
+        return
+      }
+
+      if (message.type === 'join') {
+        applyWsJoin(message.player)
+      } else if (message.type === 'leave') {
+        applyWsLeave(message.player_id)
+      } else if (
+        message.type === 'update' &&
+        message.player?.id
+      ) {
+        applyWsUpdate(message.player)
+      } else if (
+        message.type === 'health/update' &&
+        message.hp
+      ) {
+        patchPlayer(
+          message.player_id,
+          {
+            hp: message.hp,
+          },
+        )
+      }
+    }
+
+    socket.onclose = (event) => {
+      playerSocket.value = null
+
+      if (event.code === 4001) {
+        forceLogout()
+        return
+      }
+
+      if (!socketManualClose.value) {
+        console.warn(
+          `Player WebSocket closed with code ${event.code}`,
+        )
+      }
+    }
+
+    socket.onerror = (error) => {
+      console.error(
+        'Player WebSocket error:',
+        error,
+      )
+    }
+  }
+
+  function disconnectPlayerSocket(): void {
+    socketManualClose.value = true
+
+    if (playerSocket.value) {
+      try {
+        playerSocket.value.close(
+          1000,
+          'Player left session',
+        )
+      } catch {
+        // Ignore close errors.
+      }
+    }
+
+    playerSocket.value = null
+  }
+
+
   /* Expose store */
   return {
     // state
@@ -256,5 +428,8 @@ export const useSessionStore = defineStore('session', () => {
     applyWsLeave,
     applyWsUpdate,
     patchPlayer,
+    playerSocket,
+    connectPlayerSocket,
+    disconnectPlayerSocket,
   };
 });

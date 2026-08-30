@@ -1,0 +1,6 @@
+services:
+  backend:
+    gpus: all
+
+  ollama:
+    gpus: all
