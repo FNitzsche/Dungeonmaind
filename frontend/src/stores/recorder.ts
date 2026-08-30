@@ -3,8 +3,11 @@ import { defineStore } from 'pinia'
 import { ref, computed, type Ref } from 'vue'
 import { useSessionStore } from '@/stores/session'
 import { SERVER_CONFIG } from '@/config/config'
+import { useTimelineStore } from '@/stores/timeline'
 
 export const useRecorderStore = defineStore('recorder', () => {
+
+  const timelineStore = useTimelineStore()
 
   const micPermissionStatus = ref<string>('')
   const isRecording = ref<boolean>(false)
@@ -16,6 +19,7 @@ export const useRecorderStore = defineStore('recorder', () => {
   const audioRecorderInterval: Ref<number | null> = ref(null)
   const isFinalStop = ref(false)
   const isStopping = ref(false)
+  const isFirstUploadedChunk = ref(true)
 
   const timerInterval: Ref<number | null> = ref(null)
   const currentRecordingTime = ref(0)
@@ -25,7 +29,10 @@ export const useRecorderStore = defineStore('recorder', () => {
   const transcriptionStatus = ref<string>('')
   const canExportSession = ref<boolean>(false)
 
+  const uploadedDurationSeconds = ref(0)
+  
   let cleanupDone = false
+  let uploadQueue: Promise<void> = Promise.resolve()
 
   function baseUrl(): string {
     const session = useSessionStore()
@@ -126,6 +133,9 @@ export const useRecorderStore = defineStore('recorder', () => {
     clearAudioPreview()
     audioChunks.value = []
     isFinalStop.value = false
+    isFirstUploadedChunk.value = true
+    uploadedDurationSeconds.value = 0
+    uploadQueue = Promise.resolve()
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -154,7 +164,7 @@ export const useRecorderStore = defineStore('recorder', () => {
         queueMicrotask(async () => {
           if (chunks.length > 0) {
             const last = new Blob(chunks, { type: mediaRecorder.value?.mimeType })
-            void sendAudioChunk(last, isFinalStop.value)
+            void queueAudioChunk(last, isFinalStop.value)
           }
 
           if (isFinalStop.value) {
@@ -242,38 +252,142 @@ export const useRecorderStore = defineStore('recorder', () => {
     }, 120)
   })
 }
+  
+  async function getAudioDuration(blob: Blob): Promise<number> {
+    return new Promise((resolve) => {
+      const audio = document.createElement('audio')
+      const objectUrl = URL.createObjectURL(blob)
 
-  async function sendAudioChunk(chunk: Blob, isFinalSegment = false) {
+      audio.preload = 'metadata'
+      audio.src = objectUrl
+
+      audio.onloadedmetadata = () => {
+        const duration = Number.isFinite(audio.duration)
+          ? audio.duration
+          : 0
+
+        URL.revokeObjectURL(objectUrl)
+        resolve(duration)
+      }
+
+      audio.onerror = () => {
+        URL.revokeObjectURL(objectUrl)
+        resolve(0)
+      }
+    })
+  }
+
+  function queueAudioChunk(
+    chunk: Blob,
+    isFinalSegment = false,
+  ): Promise<void> {
+    uploadQueue = uploadQueue.then(
+      () => sendAudioChunk(chunk, isFinalSegment),
+    )
+
+    return uploadQueue
+  }
+
+  async function sendAudioChunk(
+    chunk: Blob,
+    isFinalSegment = false,
+  ): Promise<void> {
     const form = new FormData()
-    const fileExtension = chunk.type.split('/')[1]?.split(';')[0] || 'ogg'
-    form.append('audio', chunk, `chunk_${Date.now()}.${fileExtension}`)
-
-    try { //upload recorded audio chunks to sever for transcription
-      const res = await fetch(
-        endpoint(SERVER_CONFIG.ENDPOINTS.TRANSCRIBE_AUDIO_FILE),
-        { method: 'POST', body: form }
+  
+    const fileExtension =
+      chunk.type.split('/')[1]?.split(';')[0] || 'webm'
+  
+    form.append(
+      'audio',
+      chunk,
+      `chunk_${Date.now()}.${fileExtension}`,
+    )
+  
+    try {
+      const chunkDuration = await getAudioDuration(chunk)
+    
+      const requestUrl = new URL(
+        endpoint(
+          SERVER_CONFIG.ENDPOINTS.TRANSCRIBE_AUDIO_FILE,
+        ),
       )
-      if (!res.ok) {
-        console.error('Chunk upload failed with status:', res.status)
-
+    
+      // First chunk clears old transcription data.
+      // Later chunks are appended.
+      requestUrl.searchParams.set(
+        'replace_existing',
+        String(isFirstUploadedChunk.value),
+      )
+    
+      // Add the duration of previous chunks to this chunk's timestamps.
+      requestUrl.searchParams.set(
+        'time_offset',
+        String(uploadedDurationSeconds.value),
+      )
+    
+      const response = await fetch(
+        requestUrl.toString(),
+        {
+          method: 'POST',
+          body: form,
+        },
+      )
+    
+      if (!response.ok) {
+        console.error(
+          'Chunk upload failed:',
+          response.status,
+        )
+      
         if (isFinalSegment) {
           transcriptionStatus.value = 'Transcription failed.'
           canExportSession.value = true
-      }
+        }
+      
         return
       }
-
-      const result = await res.json()
-      console.log('Chunk transcribed successfully:', result)
-
+    
+      const result = await response.json()
+    
+      console.log(
+        'Chunk transcribed successfully:',
+        result,
+      )
+    
+      // From now on, do not delete previous chunks.
+      isFirstUploadedChunk.value = false
+    
+      // Example:
+      // first chunk = 30 seconds
+      // next chunk starts at 30 seconds
+      uploadedDurationSeconds.value += chunkDuration
+    
       if (isFinalSegment) {
         transcriptionStatus.value =
-          'Transcription completed. This session can now be saved.'
+          'Transcription completed. Generating timeline...'
+
+        await timelineStore.regenerateTimeline()
+
+        if (timelineStore.error) {
+          transcriptionStatus.value =
+            `Transcription completed, but timeline generation failed: ${timelineStore.error}`
+        } else {
+          transcriptionStatus.value =
+            'Transcription and timeline generation completed. This session can now be saved.'
+        }
+
         canExportSession.value = true
       }
-
-    } catch (e) {
-      console.error('Error sending audio chunk:', e)
+    } catch (error) {
+      console.error(
+        'Error sending audio chunk:',
+        error,
+      )
+    
+      if (isFinalSegment) {
+        transcriptionStatus.value = 'Transcription failed.'
+        canExportSession.value = true
+      }
     }
   }
 

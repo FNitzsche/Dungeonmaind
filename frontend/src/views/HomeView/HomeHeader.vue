@@ -7,6 +7,7 @@ import { useConfigStore } from "@/stores/backendConfig.ts";
 import { fetchConfig } from "@/api/backendConfigAPI.ts";
 import ConfigView from '@/views/ConfigView.vue'
 import RulebookView from '@/views/RulebookView.vue'
+import { useRouter } from 'vue-router'
 
 /** Holds Header and session saving */
 
@@ -21,6 +22,8 @@ interface CampaignsWithSessions {
 const store = useSessionStore()
 const recorder = useRecorderStore()
 const configStore = useConfigStore()
+
+const router = useRouter()
 
 const showNameModal = ref(false)
 const sessionName = ref("")
@@ -37,6 +40,40 @@ const deleteTargetName = ref("")
 
 const showConfigModal = ref(false)
 const showRulebookModal = ref(false)
+const isStartingNewSession = ref(false)
+
+async function startNewSession(): Promise<void> {
+  const confirmed = window.confirm(
+    'Start a new session? You will leave the current session and return to the login page.',
+  )
+
+  if (!confirmed || isStartingNewSession.value) {
+    return
+  }
+
+  isStartingNewSession.value = true
+
+  try {
+    await store.leave()
+
+    await router.push({
+      name: 'login',
+    })
+  } catch (error) {
+    console.error(
+      'Failed to start a new session:',
+      error,
+    )
+
+    store.clearSession()
+
+    await router.push({
+      name: 'login',
+    })
+  } finally {
+    isStartingNewSession.value = false
+  }
+}
 
 
 const openConfig = async () => {
@@ -389,6 +426,27 @@ async function confirmDeletion() {
     <div class="header-left"></div>
     <h1>Dungeonmaind</h1>
     <div class="header-right">
+      <button
+        type="button"
+        class="timeline-button"
+        @click="router.push({ name: 'timeline' })"
+      >
+        Timeline
+      </button>
+
+      <button
+        type="button"
+        class="new-session-button"
+        :disabled="isStartingNewSession"
+        @click="startNewSession"
+      >
+        {{
+          isStartingNewSession
+            ? 'Leaving...'
+            : 'Start New Session'
+        }}
+      </button>
+
       <button class="rulebook-button" @click="showRulebookModal = true">Rulebook</button>
       <button v-if="store.isLeader" class="config-button" @click="openConfig">Config</button>
       <button
@@ -567,6 +625,8 @@ async function confirmDeletion() {
   gap: 0.5rem;
 }
 
+.timeline-button,
+.new-session-button,
 .rulebook-button,
 .config-button,
 .export-button {
@@ -581,12 +641,25 @@ async function confirmDeletion() {
   transition: background-color 0.3s ease;
 }
 
+.timeline-button:hover,
+.new-session-button:hover,
 .rulebook-button:hover,
 .config-button:hover,
 .export-button:hover {
   background-color: #4a575e;
 }
 
+.new-session-button {
+  background-color: #8f3f28;
+  border-color: #6a2f20;
+}
+
+.new-session-button:hover {
+  background-color: #6f2f20;
+}
+
+.timeline-button:disabled,
+.new-session-button:disabled,
 .rulebook-button:disabled,
 .config-button:disabled,
 .export-button:disabled {

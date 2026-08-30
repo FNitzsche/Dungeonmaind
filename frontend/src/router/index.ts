@@ -21,6 +21,13 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/timeline',
+      name: 'timeline',
+      component: () =>
+        import('../views/TimelineView/TimelineView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/about',
       name: 'about',
       component: () => import('../views/AboutView.vue'),

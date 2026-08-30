@@ -26,6 +26,10 @@ export const SERVER_CONFIG = {
     GET_CAMPAIGNS: '/exportImport/getCampaigns',
     DELETE_SESSION_OR_CAMPAIGN: '/exportImport/deleteCampaignsOrSessions',
     RENAME_SESSION: '/exportImport/renameSession',
+
+    TIMELINE_EVENTS: '/timeline/events',
+    TIMELINE_GENERATE: '/timeline/generate',
+    TIMELINE_SEED_SAMPLE: '/timeline/dev/seed-sample',
   },
 }
 
