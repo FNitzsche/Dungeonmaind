@@ -1,0 +1,68 @@
+# See https://pre-commit.com for more information
+# Install:  pip install pre-commit && pre-commit install
+# Run on all files:  pre-commit run --all-files
+
+default_language_version:
+  python: python3.12
+
+repos:
+  # ──────────────────────────────────────────────
+  # General: trim trailing whitespace + EOF newline + YAML check
+  # ──────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        files: \.(py|ts|vue|json|yaml|yml|md|toml)$
+        exclude: ^backend/data/markdowns/
+      - id: end-of-file-fixer
+        files: \.(py|ts|vue|json|yaml|yml|md|toml)$
+        exclude: ^backend/data/markdowns/
+      - id: check-yaml
+        exclude: ^mkdocs\.yml$
+
+  # ──────────────────────────────────────────────
+  # Python: ruff (lint + format)
+  # ──────────────────────────────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.0
+    hooks:
+      - id: ruff
+        name: ruff-lint
+        args: [--fix, --exit-non-zero-on-fix]
+        files: ^backend/
+      - id: ruff-format
+        name: ruff-format
+        files: ^backend/
+
+  # ──────────────────────────────────────────────
+  # Frontend: Prettier (format check)
+  # ──────────────────────────────────────────────
+  - repo: https://github.com/rbubley/mirrors-prettier
+    rev: v3.5.3
+    hooks:
+      - id: prettier
+        name: prettier-frontend
+        files: ^frontend/src/
+        additional_dependencies:
+          - prettier@3.5.3
+
+  # ──────────────────────────────────────────────
+  # Frontend: ESLint (lint + fix)
+  # ──────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/mirrors-eslint
+    rev: v9.9.1
+    hooks:
+      - id: eslint
+        name: eslint-frontend
+        args: [--fix, --config, eslint.config.ts]
+        files: ^frontend/src/
+        additional_dependencies:
+          - eslint@9.25.1
+          - typescript@5.8.3
+          - "@typescript-eslint/parser@8.31.1"
+          - "@typescript-eslint/eslint-plugin@8.31.1"
+          - eslint-plugin-vue@10.1.0
+          - vue-eslint-parser@10.1.3
+          - prettier@3.5.3
+          - eslint-config-prettier@10.1.2

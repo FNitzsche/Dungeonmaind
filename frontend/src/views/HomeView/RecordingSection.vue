@@ -1,10 +1,13 @@
 <script setup lang="ts">
+/**
+ * RecordingSection – provides UI for starting/stopping microphone recording,
+ * checking voiceprint readiness, and showing recording status/timer.
+ */
 import { computed } from 'vue'
 import { useRecorderStore } from '@/stores/recorder.ts'
 import { useSessionStore } from '@/stores/session.ts'
 
 /** Holds recording section */
-
 
 const recorder = useRecorderStore()
 const store = useSessionStore()
@@ -29,14 +32,15 @@ function playRecording() {
 }
 
 function getStatusClass() {
-    if (recorder.isRecording) return 'output recording-active'
-    if (recorder.transcriptionStatus) {
-        return recorder.canExportSession ? 'output transcription-success' : 'output transcription-pending'
-    }
-    // Default or initial mic status
-    return 'output'
+  if (recorder.isRecording) return 'output recording-active'
+  if (recorder.transcriptionStatus) {
+    return recorder.canExportSession
+      ? 'output transcription-success'
+      : 'output transcription-pending'
+  }
+  // Default or initial mic status
+  return 'output'
 }
-
 </script>
 
 <template>
@@ -54,20 +58,24 @@ function getStatusClass() {
         Start Recording
       </button>
       <p v-if="!recorder.isRecording && !allVoiceprintsReady" class="secondary-medieval-text">
-        Please record a voiceprint for each player<br>and for yourself before starting the recording
+        Please record a voiceprint for each player<br />and for yourself before starting the
+        recording
       </p>
       <button @click="stopRecording" v-if="recorder.isRecording" class="submit-button">
         Stop Recording
       </button>
     </div>
 
-    <div v-if="recorder.micPermissionStatus || recorder.transcriptionStatus" :class="getStatusClass()">
-      <p v-if="recorder.transcriptionStatus"> {{ recorder.transcriptionStatus }}</p>
+    <div
+      v-if="recorder.micPermissionStatus || recorder.transcriptionStatus"
+      :class="getStatusClass()"
+    >
+      <p v-if="recorder.transcriptionStatus">{{ recorder.transcriptionStatus }}</p>
       <p v-else-if="recorder.micPermissionStatus">{{ recorder.micPermissionStatus }}</p>
     </div>
 
     <div v-if="recorder.isRecording" class="recording-timer output">
-      <p> Recording: {{ recorder.formattedRecordingTime }}</p>
+      <p>Recording: {{ recorder.formattedRecordingTime }}</p>
     </div>
 
     <div v-if="recorder.recordedAudioURL" class="output">

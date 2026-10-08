@@ -3,6 +3,7 @@ import { SERVER_CONFIG } from '@/config/config'
 export type Role = 'leader' | 'member'
 export type PlayerStatus = 'active' | 'inactive' | 'kicked'
 
+/** Object mapping ability score keys to values (with extra unknown fields allowed). */
 export type AbilityScores = {
   str?: number
   dex?: number
@@ -12,13 +13,14 @@ export type AbilityScores = {
   cha?: number
 } & Record<string, number | string | undefined>
 
+/** Hit-point values for a player: current, max, and temporary HP. */
 export type Hp = {
   current: number
   max: number
   temp: number
 }
 
-/** Server + client mirror */
+/** Full player object as returned and expected by the server. */
 export type PlayerOut = {
   id: string
   name: string
@@ -31,6 +33,7 @@ export type PlayerOut = {
   abilities?: AbilityScores | { [k: string]: any } | undefined
 }
 
+/** Valid ability score keys. */
 export type AbilityKey = 'str' | 'dex' | 'con' | 'int_' | 'wis' | 'cha'
 
 function base(baseUrl?: string): string {
@@ -85,10 +88,7 @@ export async function leave(playerId: string, baseUrl?: string): Promise<void> {
  * - includeInactive=false -> only active players
  * - includeInactive=true  -> all players (used for "Join existing player" flow)
  */
-export async function listPlayers(
-  includeInactive = false,
-  baseUrl?: string,
-): Promise<PlayerOut[]> {
+export async function listPlayers(includeInactive = false, baseUrl?: string): Promise<PlayerOut[]> {
   const urlObj = new URL('/players', base(baseUrl))
   if (includeInactive) {
     urlObj.searchParams.set('include_inactive', 'true')
@@ -222,11 +222,10 @@ export async function kickPlayer(
   }
 }
 
-export async function postPlayerVoiceprint(
-  playerId: string,
-  voiceprint: Blob,
-  baseUrl: string,
-) {
+/**
+ * Upload a voiceprint audio blob for a player.
+ */
+export async function postPlayerVoiceprint(playerId: string, voiceprint: Blob, baseUrl: string) {
   const fileExtension = voiceprint.type.split('/')[1]?.split(';')[0] || 'ogg'
   const url = new URL(`/players/${playerId}/voiceprint`, base(baseUrl)).toString()
 

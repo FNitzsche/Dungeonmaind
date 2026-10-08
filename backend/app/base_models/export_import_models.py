@@ -1,42 +1,67 @@
-from pydantic import BaseModel, Field
-from typing import List, Dict
-from app.domain.models import Role
-from app.base_models.schemas import PlayerOut
+"""Pydantic models for session export/import request/response schemas."""
+
 from uuid import UUID
-from datetime import datetime
-from enum import Enum
+
+from pydantic import BaseModel, Field
+
+from app.base_models.schemas import PlayerOut
 
 
 class ExportRequest(BaseModel):
-    campaign_name: str = Field(..., description="Name of the campaign where the session has to be saved")
-    session_name: str = Field(..., description="Name of the session to be saved")
+    """Request model for exporting a session to a file.
+
+    Attributes:
+        campaign_name: Name of the campaign under which to save.
+        session_name: Name of the session to save.
+    """
+
+    campaign_name: str = Field(
+        ..., description='Name of the campaign where the session has to be saved'
+    )
+    session_name: str = Field(..., description='Name of the session to be saved')
 
 
 class ImportRequest(BaseModel):
-    campaign_name: str = Field(..., description="Name of the campaign where the session has to be saved")
-    session_name: str = Field(..., description="Name of the session to be loaded")
+    """Request model for importing a session from a file."""
+
+    campaign_name: str = Field(
+        ..., description='Name of the campaign where the session has to be saved'
+    )
+    session_name: str = Field(..., description='Name of the session to be loaded')
 
 
 class RenameRequest(BaseModel):
-    campaign_name: str = Field(..., description="Name of the campaign where the session is saved")
-    old_session_name: str = Field(..., description="Name of the saved session")
-    new_session_name: str = Field(..., description="New name of the saved session")
+    """Request model for renaming a saved session."""
+
+    campaign_name: str = Field(..., description='Name of the campaign where the session is saved')
+    old_session_name: str = Field(..., description='Name of the saved session')
+    new_session_name: str = Field(..., description='New name of the saved session')
 
 
 class DeleteRequest(BaseModel):
-    campaign_or_session_name: str = Field(..., description="Name of the campaign or session to be deleted")
+    """Request model for deleting a campaign or session."""
+
+    campaign_or_session_name: str = Field(
+        ..., description='Name of the campaign or session to be deleted'
+    )
 
 
 class Sessions(BaseModel):
-    folders: List[str]
+    """List of session folder names within a campaign."""
+
+    folders: list[str]
 
 
 class Campaigns(BaseModel):
-    campaigns: Dict[str, Sessions]
+    """Mapping of campaign names to their sessions."""
+
+    campaigns: dict[str, Sessions]
 
 
 # If needed later
 class GroupOut(BaseModel):
+    """Response model for group data including players."""
+
     id: UUID
     max_size: int
     players: list[PlayerOut]

@@ -1,10 +1,10 @@
 <script setup lang="ts">
+/**
+ * SessionOverview – displays a greeting with the current player's name.
+ */
 import { useSessionStore } from '@/stores/session.ts'
 
-/** Holds Greeter */
-
 const store = useSessionStore()
-
 </script>
 
 <template>

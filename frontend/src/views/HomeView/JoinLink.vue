@@ -1,8 +1,12 @@
 <script setup lang="ts">
+/**
+ * JoinLink – displays the local network join URL for other players
+ * and a QR code modal for easy sharing (leader-only).
+ */
 import QrcodeVue from 'qrcode.vue'
 import { SERVER_CONFIG } from '@/config/config'
 import { useSessionStore } from '@/stores/session.ts'
-import {ref} from "vue";
+import { ref } from 'vue'
 
 const store = useSessionStore()
 const localNetworkIP = SERVER_CONFIG.LOCAL_NETWORK_IP
@@ -11,41 +15,40 @@ const showQRCodeModal = ref(false)
 </script>
 
 <template>
-<div v-if="store.isLeader" :class="['join-link', 'rail-panel']">
-  <h2 class="rail-title">Join Link (New Members)</h2>
-  <div v-if="localNetworkIP">
-    <label>http://{{ localNetworkIP }}:{{ port }}</label>
-    <button class="submit-button" @click="showQRCodeModal = true">QR Code</button>
-    <p>Copy the join link or click the button to open<br>
-      Dungeonmaind on another device via QR code</p>
+  <div v-if="store.isLeader" :class="['join-link', 'rail-panel']">
+    <h2 class="rail-title">Join Link (New Members)</h2>
+    <div v-if="localNetworkIP">
+      <label>http://{{ localNetworkIP }}:{{ port }}</label>
+      <button class="submit-button" @click="showQRCodeModal = true">QR Code</button>
+      <p>
+        Copy the join link or click the button to open<br />
+        Dungeonmaind on another device via QR code
+      </p>
 
-    <div v-if="localNetworkIP && showQRCodeModal" class="modal-overlay" >
-      <div class="modal">
-        <qrcode-vue
-        :value="`http://${localNetworkIP}:${port}`"
-        :size="180"
-        level="M"
-      />
-      <p>Scan the code to open<br>
-        Dungeonmaind on another device</p>
-      <button class="submit-button" @click="showQRCodeModal = false">Done</button>
+      <div v-if="localNetworkIP && showQRCodeModal" class="modal-overlay">
+        <div class="modal">
+          <qrcode-vue :value="`http://${localNetworkIP}:${port}`" :size="180" level="M" />
+          <p>
+            Scan the code to open<br />
+            Dungeonmaind on another device
+          </p>
+          <button class="submit-button" @click="showQRCodeModal = false">Done</button>
+        </div>
       </div>
     </div>
-  </div>
 
-  <div v-else>
-    <p>
-      No local network IP set<br>
-      Please leave the session and rejoin as<br>
-      Leader to set your local network IP
-    </p>
+    <div v-else>
+      <p>
+        No local network IP set<br />
+        Please leave the session and rejoin as<br />
+        Leader to set your local network IP
+      </p>
+    </div>
   </div>
-</div>
 </template>
 
 <style src="@/assets/styles.css"></style>
 <style scoped>
-
 .join-link {
   font-family: 'MedievalSharp', cursive;
   font-weight: 600;

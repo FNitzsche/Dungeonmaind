@@ -8,14 +8,96 @@ All processing is performed locally. No audio, transcripts, or campaign data are
 
 ---
 
+## Quick Start — Run End-to-End
+
+### Prerequisites
+- Python 3.12, Node.js (LTS), ffmpeg (on PATH), Git
+- (Optional) NVIDIA GPU with CUDA 12.8+ for faster transcription
+
+### 1. Clone and prepare
+```bash
+git clone https://github.com/FNitzsche/Dungeonmaind.git
+cd Dungeonmaind
+python -m venv .venv && source .venv/bin/activate   # Windows: .\.venv\Scripts\Activate.ps1
+pip install -r backend/requirements.txt
+cp backend/.env.example backend/.env
+# (Optional) Set HF_TOKEN / OLLAMA_API_KEY / FFMPEG_PATH in backend/.env
+cd frontend && npm install && cd ..
+```
+
+### 2. Start Ollama (LLM)
+```bash
+ollama serve
+# In another terminal:
+ollama pull hf.co/bartowski/mistralai_Ministral-3-3B-Instruct-2512-GGUF:Q5_K_M
+```
+
+### 3. Start the app (startup script)
+```bash
+# macOS / Linux
+chmod +x start.sh && ./start.sh
+
+# Windows (PowerShell)
+.\start.ps1
+```
+This starts the backend (`:8000`) and frontend (`:5173`) together.
+
+### Manual start (optional)
+```bash
+# Terminal A — backend
+source .venv/bin/activate
+cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+# Terminal B — frontend
+cd frontend && npm run dev
+```
+
+### 4. Open and use
+- Open **http://localhost:5173** in your browser.
+- Click **Check/Set Connection** (default URL `http://localhost:8000`).
+- Click **Join as new Player** → choose **Leader** (only on localhost) → enter your local network IP and name → **Join**.
+- Record a session, then ask questions or visit **/timeline** to see generated events.
+
+### Alternative: Docker
+```bash
+docker compose up
+```
+Starts all three services (ollama, backend, frontend) at once.
+
+---
+
+## Documentation Site (MkDocs)
+
+The project has a documentation site built with [MkDocs](https://www.mkdocs.org) (Material theme). It includes auto-generated API reference from docstrings, architecture diagrams, and guides.
+
+### First-time setup
+```bash
+pip install mkdocs mkdocs-material "mkdocstrings[python]" pymdown-extensions
+```
+
+### Serve locally
+```bash
+# From the project root
+mkdocs serve
+# Open http://localhost:8000
+```
+
+### Build static site
+```bash
+mkdocs build
+# Output in site/ directory
+```
+
+---
+
 ## Project Goal
 
 > DnD campaigns often span many sessions, making it difficult to remember details from past campaigns.
 
 Dungeon M-AI-nd addresses this problem by:
-1. Recording spoken audio during a session  
-2. Transcribing it automatically  
-3. Making the content searchable and queryable  
+1. Recording spoken audio during a session
+2. Transcribing it automatically
+3. Making the content searchable and queryable
 
 This allows players to retrieve accurate information based on **real session dialogue**, not summaries or manual notes. The goal is to efficiently record your DnD sessions and to make them searchable. Players are be able to ask questions like:
 
@@ -41,7 +123,7 @@ and receive accurate answers based on real transcriptions of their sessions.
 
 ## System Overview
 
-🎙️ Recording → 🧠 Transcription (WhisperX) 
+🎙️ Recording → 🧠 Transcription (WhisperX)
 → 🧩 Embedding → 💾 Storage → 🤖 Q&A via LLM
 
 ---
@@ -54,7 +136,7 @@ and receive accurate answers based on real transcriptions of their sessions.
 - Node.js
 - ffmpeg (for WhisperX) - very important!
 - (Optional but recommended) GPU with CUDA for accelerated transcription by WhisperX and answer-	response times by the llm
-  
+
 ### 1. Clone the repository
 	```text
 	git clone https://github.com/FNitzsche/Dungeonmaind.git
@@ -67,9 +149,9 @@ and receive accurate answers based on real transcriptions of their sessions.
 	```
 For GPU support you need to install CUDA (CUDA Toolkit 12.8.1), cuDNN (cuDNN 9.10.2), ctranslate2 (4.6.0) and:
 	```text
-	
+
 	pip uninstall torch torchaudio
-	
+
 	pip install torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128
 	```
 
@@ -136,7 +218,7 @@ See the README.md file in the 'frontend' folder. (first run ```npm install```, t
 ### Stopping the Recording
 1. Click Stop Recording when the session ends.
 2. The recording timer stops and the final audio segment is sent to the backend.
-3. A status message soon appears indicating the audio transcription is in progress. 
+3. A status message soon appears indicating the audio transcription is in progress.
 4. The backend eventually completes final transcription, alignment, and speaker labeling.
 5. Once final processing is complete, the session is now ready for playback, querying, and export.
 

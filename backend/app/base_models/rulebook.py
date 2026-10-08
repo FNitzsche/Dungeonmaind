@@ -1,11 +1,24 @@
+"""Pydantic models for rulebook markdown folder/file structures."""
+
 from pydantic import BaseModel
-from typing import List, Dict
+
 
 class FolderContent(BaseModel):
-    folders: List[str]
-    files: List[str]
+    """Content listing for a rulebook folder.
 
-FolderStructure = Dict[str, FolderContent]
+    Attributes:
+        folders: List of subfolder names.
+        files: List of markdown file names.
+    """
+
+    folders: list[str]
+    files: list[str]
+
+
+FolderStructure = dict[str, FolderContent]
+
 
 class FileContentResponse(BaseModel):
+    """Response model containing the raw content of a markdown file."""
+
     content: str

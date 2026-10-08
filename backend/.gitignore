@@ -182,3 +182,6 @@ cython_debug/
 
 # Chroma DB
 data/chroma_db/
+
+# Temporary uploaded audio
+data/tmp_audio/

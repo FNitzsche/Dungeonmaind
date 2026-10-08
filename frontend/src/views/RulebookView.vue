@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import {computed, ref} from "vue"
+/**
+ * RulebookView – a file explorer for browsing and reading
+ * System Reference Document (SRD) markdown files served by the backend.
+ */
+import { computed, ref } from 'vue'
 import { SERVER_CONFIG } from '../config/config'
-import { marked } from "marked"
+import { marked } from 'marked'
 import { useRouter } from 'vue-router'
-
 
 const router = useRouter()
 interface FolderData {
@@ -13,15 +16,18 @@ const folderStructure = ref<Record<string, FolderData>>({})
 const visibleFolders = computed(() => {
   // remove entries with empty keys
   return Object.entries(folderStructure.value)
-    .filter(([folder]) => folder.trim() !== "")
-    .reduce((acc, [folder, data]) => {
-      acc[folder] = data
-      return acc
-    }, {} as Record<string, FolderData>)
+    .filter(([folder]) => folder.trim() !== '')
+    .reduce(
+      (acc, [folder, data]) => {
+        acc[folder] = data
+        return acc
+      },
+      {} as Record<string, FolderData>,
+    )
 })
-const selectedFile = ref("")
-const markdownContent = ref("")
-const renderedMarkdown = ref("")
+const selectedFile = ref('')
+const markdownContent = ref('')
+const renderedMarkdown = ref('')
 const expandedFolders = ref<Set<string>>(new Set())
 
 const emit = defineEmits(['submit-success'])
@@ -29,8 +35,8 @@ const emit = defineEmits(['submit-success'])
 async function fetchFolders() {
   const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RULEBOOK_FOLDERS}`)
   const data = await res.json()
-  console.log("Fetched folders:", Object.keys(data))
-  delete data[""]
+  console.log('Fetched folders:', Object.keys(data))
+  delete data['']
   folderStructure.value = data
 }
 fetchFolders()
@@ -38,7 +44,7 @@ fetchFolders()
 async function fetchFile(path: string) {
   selectedFile.value = path
   const res = await fetch(
-    `${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RULEBOOK_FILE}?path=${encodeURIComponent(path)}`
+    `${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.RULEBOOK_FILE}?path=${encodeURIComponent(path)}`,
   )
   const data = await res.json()
   markdownContent.value = data.content
@@ -60,14 +66,13 @@ function toggleFolder(folder: string) {
       <h2>System Reference Documents (SRD) v.5</h2>
       <ul>
         <li v-for="(data, folder) in visibleFolders" :key="folder">
-          <div @click="toggleFolder(folder)" class="folder">
-            ▶ {{ folder }}
-          </div>
+          <div @click="toggleFolder(folder)" class="folder">▶ {{ folder }}</div>
           <ul v-if="expandedFolders.has(folder)">
-            <li v-for="file in data.files"
-                :key="file"
-                class="file"
-                @click="fetchFile(folder ? folder + '/' + file : file)"
+            <li
+              v-for="file in data.files"
+              :key="file"
+              class="file"
+              @click="fetchFile(folder ? folder + '/' + file : file)"
             >
               {{ (file as string).replace(/\.md$/, '') }}
             </li>
@@ -80,8 +85,8 @@ function toggleFolder(folder: string) {
       <div
         v-if="selectedFile"
         v-html="renderedMarkdown"
-        class="markdown-output scrollable-panel">
-      </div>
+        class="markdown-output scrollable-panel"
+      ></div>
       <button class="goHome-button" @click="emit('submit-success')">return</button>
     </div>
   </div>

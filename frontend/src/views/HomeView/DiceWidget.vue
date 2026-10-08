@@ -1,4 +1,7 @@
 <script setup lang="ts">
+/**
+ * DiceWidget – a simple dice-rolling widget supporting W4, W6, W8, W12, and W20.
+ */
 import { ref } from 'vue'
 import { useSessionStore } from '@/stores/session.ts'
 
@@ -50,7 +53,6 @@ function rollDice(sides: number) {
   row-gap: 0rem;
   justify-content: center;
 }
-
 
 .dice-button {
   flex: 1 0 30%;
