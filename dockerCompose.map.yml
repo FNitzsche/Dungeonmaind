@@ -1,0 +1,12 @@
+# Additive override; leave dockerCompose.yml unchanged.
+# docker compose -f dockerCompose.yml -f dockerCompose.map.yml up --build
+services:
+  backend:
+    command:
+      - uvicorn
+      - app.main_with_map:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload

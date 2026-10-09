@@ -12,8 +12,21 @@ from uvicorn import run
 from app.core.config import settings
 from app.functions.embedding.embedding_model import (embedd_rulebook, read_text_files, delete_chromadb,
                                                      delete_transcription_embeddings, has_rulebook_embeddings)
-from app.api.routers import players, llm, root, health, config_router, ws_players, process_audio_data, \
-    export_import_session, rulebook_markdown
+# from app.api.routers import players, llm, root, health, config_router, ws_players, process_audio_data, \
+#     export_import_session, rulebook_markdown
+from app.api.routers import (
+    players,
+    llm,
+    root,
+    health,
+    config_router,
+    ws_players,
+    process_audio_data,
+    export_import_session,
+    rulebook_markdown,
+    entity_extraction,
+    timeline,
+)
 from contextlib import asynccontextmanager
 from app.core.bus import bus
 
@@ -28,6 +41,8 @@ all_routers = [
     (ws_players.router, "/ws", ["ws"]),
     (rulebook_markdown.router, "/rulebook", ["rulebook"]),
     (export_import_session.router, "/exportImport", ["exportImport"]),
+    (entity_extraction.router, "/entities", ["entities"]),
+    (timeline.router, "/timeline", ["timeline"]),
 ]
 
 # 192.168.x.x und beliebige localhost-Ports zulassen
@@ -56,7 +71,9 @@ async def lifespan(app: FastAPI):
         embedd_rulebook(texts, txt_paths)
         logging.info("Rulebook successfully embedded.")
         print("Rulebook successfully embedded.")
-    delete_transcription_embeddings()
+    # Do not delete session transcriptions at every backend restart.
+    # The timeline needs these documents to remain available.
+    # delete_transcription_embeddings()
     # Save original chroma_db path for shutdown
     chroma_db_path = settings.chroma_db_path
 

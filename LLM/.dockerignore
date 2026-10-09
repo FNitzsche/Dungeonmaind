@@ -1,0 +1,5 @@
+# The image only needs its Dockerfile and startup script.
+**
+!dockerfile
+!run-ollama.sh
+!.dockerignore

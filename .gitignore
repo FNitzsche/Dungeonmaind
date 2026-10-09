@@ -1,8 +1,79 @@
+# Credentials and machine-specific environment files (at any depth).
+# Only sanitized templates belong in Git.
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+.envrc
+.npmrc
+.pypirc
+secrets/
+.secrets/
+secrets.*
+credentials.*
+client_secret*.json
+.netrc
+_netrc
+.git-credentials
+.aws/
+.azure/
+.ssh/
+.kube/
+.docker/config.json
+service-account*.json
+service_account*.json
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa*
+id_ed25519*
+
+# Editors, operating systems, dependencies and caches.
 .idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
+.venv/
+venv/
+node_modules/
+__pycache__/
+*.py[cod]
+.cache/
+*.log
+*.tmp
+*.bak
+*~
 
-**/.idea/
-**/.venv/
-**/.env.txt
+# Private experiments: keep shared test source and sanitized fixtures tracked.
+local/
+local-tests/
+scratch/
+*.local
+*.local.*
+test_local_*.py
+local_test_*.py
 
-**/backend/data/chroma_db/
-**/backend/data/SavedSessions/
+# Generated test output, never test source.
+coverage/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+.pytest_cache/
+.hypothesis/
+test-results/
+playwright-report/
+blob-report/
+junit.xml
+
+# Local media and model caches; shared fixtures should live under tests/data.
+recordings/
+uploads/
+models/
+
+.venv312/

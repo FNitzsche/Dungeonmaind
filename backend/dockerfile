@@ -1,60 +1,101 @@
 FROM python:3.12.1
 
-# Set working directory
+# ---------------------------------------------------------
+# Working directory
+# ---------------------------------------------------------
 WORKDIR /app
 
-# Install system-level dependencies (including ffmpeg)
+# ---------------------------------------------------------
+# System dependencies
+# ---------------------------------------------------------
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# ---------------------------------------------------------
+# Python dependencies
+# ---------------------------------------------------------
 COPY requirements.txt .
+
+RUN pip install --upgrade pip wheel
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application source code and environment file
+# Make sure the intended Whisper/Faster-Whisper runtime stays installed.
+RUN pip uninstall -y ctranslate2 || true
+RUN pip install --no-cache-dir --no-deps ctranslate2==4.6.3
+RUN pip install --no-cache-dir faster-whisper==1.2.1
+
+# ---------------------------------------------------------
+# CUDA-enabled PyTorch
+#
+# This image can still run on CPU when Docker does not expose a GPU.
+# In that case torch.cuda.is_available() returns False and the Python
+# code falls back to CPU.
+# ---------------------------------------------------------
+RUN pip uninstall -y torch torchaudio torchvision || true
+
+RUN pip install --no-cache-dir \
+    torch==2.8.0 \
+    torchvision==0.23.0 \
+    torchaudio==2.8.0 \
+    --index-url https://download.pytorch.org/whl/cu126
+
+# ---------------------------------------------------------
+# cuDNN / CUDA runtime libraries
+# ---------------------------------------------------------
+RUN pip install --no-cache-dir nvidia-cudnn-cu12
+
+ENV LD_LIBRARY_PATH=/usr/local/lib/python3.12/site-packages/nvidia/cudnn/lib:/usr/local/lib/python3.12/site-packages/nvidia/cublas/lib:/usr/local/lib/python3.12/site-packages/nvidia/cuda_runtime/lib:${LD_LIBRARY_PATH}
+
+# ---------------------------------------------------------
+# Copy application
+# ---------------------------------------------------------
 COPY app ./app
-COPY .env .
 
-# Download and cache embedding model into /models
-RUN mkdir -p /models && \
-    python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2', cache_folder='/models')"
+# .env is supplied at runtime through dockerCompose.yml:
+# env_file:
+#   - ./backend/.env
+
+# ---------------------------------------------------------
+# Model cache configuration
+# ---------------------------------------------------------
+RUN mkdir -p /models
+
 ENV SENTENCE_TRANSFORMERS_HOME=/models
-
-# TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1 is a fix for the latest TORCH update
-ENV TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1
 ENV WHISPERX_MODELS_DIR=/models/whisperx
 ENV TORCH_HOME=/models/torch_cache
+ENV TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1
 
-# Make directories for caching
-RUN mkdir -p /models/whisperx /models/torch_cache/hub/checkpoints
+RUN mkdir -p \
+    /models/whisperx \
+    /models/torch_cache/hub/checkpoints
 
+# ---------------------------------------------------------
+# Pre-download SentenceTransformer model
+# ---------------------------------------------------------
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2', cache_folder='/models')"
+
+# ---------------------------------------------------------
 # Pre-download WhisperX ASR model
-RUN python -c "\
-import whisperx; \
-whisperx.load_model('base', language='en', device='cpu', compute_type='int8', download_root='/models/whisperx')"
+#
+# CPU is intentionally used during Docker BUILD. At runtime,
+# transcribe_audio.py automatically selects GPU when available.
+# ---------------------------------------------------------
+RUN python -c "import whisperx; whisperx.load_model('base', language='en', device='cpu', compute_type='int8', download_root='/models/whisperx')"
 
-# Pre-download WhisperX alignment model (wav2vec2) for english language
-RUN python -c "\
-import torch.hub; \
-torch.hub.download_url_to_file( \
-    'https://download.pytorch.org/torchaudio/models/wav2vec2_fairseq_base_ls960_asr_ls960.pth', \
-    '/models/torch_cache/hub/checkpoints/wav2vec2_fairseq_base_ls960_asr_ls960.pth', \
-    progress=True)"
+# ---------------------------------------------------------
+# Pre-download English alignment model
+# ---------------------------------------------------------
+RUN python -c "import torch.hub; torch.hub.download_url_to_file('https://download.pytorch.org/torchaudio/models/wav2vec2_fairseq_base_ls960_asr_ls960.pth', '/models/torch_cache/hub/checkpoints/wav2vec2_fairseq_base_ls960_asr_ls960.pth', progress=True)"
 
-# Alternatively pre-download wav2vec for german
-#RUN python -c "\
-#import torch.hub; \
-#torch.hub.download_url_to_file( \
-#    'https://download.pytorch.org/torchaudio/models/wav2vec2_voxpopuli_base_10k_asr_en.pt', \
-#    '/models/torch_cache/hub/checkpoints/wav2vec2_voxpopuli_base_10k_asr_en.pt', \
-#    progress=True)"
+# ---------------------------------------------------------
+# Build-time version check
+# ---------------------------------------------------------
+RUN python -c "import torch, ctranslate2; print('PyTorch:', torch.__version__); print('PyTorch CUDA build:', torch.version.cuda); print('cuDNN version:', torch.backends.cudnn.version()); print('CTranslate2:', ctranslate2.__version__)"
 
-# If other languages are detected during runtime of the application, wav2vec might downlaod additional wav2vec models
-# during runtime
-
-# Expose the FastAPI port
+# ---------------------------------------------------------
+# FastAPI
+# ---------------------------------------------------------
 EXPOSE 8000
 
-# Run the app with Uvicorn
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

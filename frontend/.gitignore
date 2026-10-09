@@ -10,9 +10,7 @@ yarn-debug.log*
 pnpm-debug.log*
 next-env.d.ts
 
-# Environment files
-.env
-.env.*.local
+# Environment files and secrets are covered by the root .gitignore.
 
 # OS files
 .DS_Store
@@ -44,9 +42,9 @@ dist-ssr/
 
 # Playwright & E2E reports
 playwright-report/
-*.spec.ts
+blob-report/
+# Shared *.spec.ts / *.test.ts files belong in Git. For private experiments,
+# use local-tests/ or names such as MapView.local.test.ts (root ignore rules).
 
-# Miscellaneous
-.env
-npm-debug.log*
-yarn-error.log*
+# Cypress local cache
+.nyc_output/

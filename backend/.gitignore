@@ -180,5 +180,13 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
-# Chroma DB
-data/chroma_db/
+# Runtime data is private by default: timelines, map output, saved sessions,
+# Chroma databases, exports and any future generated files under data/.
+# These two directories contain the shared rulebook source, not session data.
+/data/*
+!/data/markdowns/
+!/data/rulebook/
+# Preserve the empty directory required by the session-listing endpoints.
+!/data/SavedSessions/
+/data/SavedSessions/*
+!/data/SavedSessions/.gitkeep

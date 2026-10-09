@@ -1,0 +1,10 @@
+{
+  "nodes": [
+    {"id": "waterdeep", "name": "Waterdeep", "mentions": 1, "first_seen": 10.0, "last_seen": 15.0},
+    {"id": "neverwinter", "name": "Neverwinter", "mentions": 1, "first_seen": 10.0, "last_seen": 15.0}
+  ],
+  "edges": [
+    {"id": "journey-1", "source": "waterdeep", "target": "neverwinter", "relation": "travelled_to", "evidence": "We travelled from Waterdeep to Neverwinter.", "timestamp": 10.0}
+  ],
+  "source_segment_count": 1
+}
