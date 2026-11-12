@@ -68,8 +68,8 @@ async def list_locations(
     """List resolved map places for a session.
 
     Normalizes, dedupes, and alias-merges location_entities from the
-    session's ordered timeline events. Backed by the in-memory timeline
-    store until a dedicated MapStore exists.
+    session's ordered timeline events. Reads MapStore when a map has been
+    generated, otherwise resolves places live from the timeline.
 
     Args:
         session_id: Session identifier (default 'default').
@@ -181,8 +181,8 @@ async def list_edges(
     """List inferred spatial links for a session.
 
     Resolves the session's places, then infers the travel and proximity
-    edges between them from the ordered timeline. Backed by the in-memory
-    timeline store until a dedicated MapStore exists.
+    edges between them from the ordered timeline. Reads MapStore when a map
+    has been generated, otherwise infers links live from the timeline.
 
     Args:
         session_id: Session identifier (default 'default').

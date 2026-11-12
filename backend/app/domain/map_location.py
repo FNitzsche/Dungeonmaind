@@ -27,3 +27,28 @@ class MapLocation:
     event_ids: list[str] = field(default_factory=list)
     mention_count: int = 0
     first_order: int = 0
+
+    def to_dict(self) -> dict:
+        """Serialize this location for timeline/map export."""
+        return {
+            'id': self.id,
+            'session_id': self.session_id,
+            'canonical_name': self.canonical_name,
+            'aliases': list(self.aliases),
+            'event_ids': list(self.event_ids),
+            'mention_count': self.mention_count,
+            'first_order': self.first_order,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> MapLocation:
+        """Deserialize a location written by export."""
+        return cls(
+            id=data['id'],
+            session_id=data['session_id'],
+            canonical_name=data['canonical_name'],
+            aliases=list(data.get('aliases', [])),
+            event_ids=list(data.get('event_ids', [])),
+            mention_count=int(data.get('mention_count', 0)),
+            first_order=int(data.get('first_order', 0)),
+        )

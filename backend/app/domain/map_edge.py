@@ -39,3 +39,31 @@ class MapEdge:
     relationship: MapEdgeRelationship = field(default_factory=lambda: MapEdgeRelationship.travel)
     evidence_event_ids: list[str] = field(default_factory=list)
     order: int = 0
+
+    def to_dict(self) -> dict:
+        """Serialize this edge for timeline/map export."""
+        relationship = self.relationship
+        return {
+            'id': self.id,
+            'session_id': self.session_id,
+            'from_location_id': self.from_location_id,
+            'to_location_id': self.to_location_id,
+            'relationship': relationship.value
+            if isinstance(relationship, MapEdgeRelationship)
+            else str(relationship),
+            'evidence_event_ids': list(self.evidence_event_ids),
+            'order': self.order,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> MapEdge:
+        """Deserialize an edge written by export."""
+        return cls(
+            id=data['id'],
+            session_id=data['session_id'],
+            from_location_id=data['from_location_id'],
+            to_location_id=data['to_location_id'],
+            relationship=MapEdgeRelationship(data.get('relationship', 'travel')),
+            evidence_event_ids=list(data.get('evidence_event_ids', [])),
+            order=int(data.get('order', 0)),
+        )
