@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import * as api from '@/api/timelineAPI'
 import type { TimelineEventOut, EventType } from '@/api/timelineAPI'
+import { useSessionStore } from '@/stores/session'
 
 /**
  * Timeline store – manages session timeline events: fetching, generating,
@@ -42,15 +43,20 @@ export const useTimelineStore = defineStore('timeline', () => {
     return grouped
   })
 
+  function resolveSessionId(sessionId?: string) {
+    return sessionId ?? useSessionStore().sessionId
+  }
+
   /**
-   * Fetch timeline events for the given session from the backend.
-   * @param sessionId - Session identifier (defaults to 'default').
+   * Fetch timeline events for the active campaign/session.
+   * @param sessionId - Optional override. Defaults to the session store key.
    */
-  async function fetchEvents(sessionId = 'default') {
+  async function fetchEvents(sessionId?: string) {
+    const id = resolveSessionId(sessionId)
     loading.value = true
     error.value = null
     try {
-      const response = await api.listEvents(sessionId)
+      const response = await api.listEvents(id)
       events.value = response?.events ?? []
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Failed to load events'
@@ -62,15 +68,16 @@ export const useTimelineStore = defineStore('timeline', () => {
 
   /**
    * Request the backend to generate timeline events from session data.
-   * @param sessionId - Session identifier.
+   * @param sessionId - Optional override. Defaults to the session store key.
    * @returns The generate response or null on failure.
    */
-  async function generateEvents(sessionId = 'default') {
+  async function generateEvents(sessionId?: string) {
+    const id = resolveSessionId(sessionId)
     if (generating.value) return
     generating.value = true
     error.value = null
     try {
-      const response = await api.generateEvents(sessionId)
+      const response = await api.generateEvents(id)
       events.value = response?.events ?? []
       return response
     } catch (err) {
@@ -96,11 +103,12 @@ export const useTimelineStore = defineStore('timeline', () => {
 
   /**
    * Clear all events for a session on the backend and in the local store.
-   * @param sessionId - Session identifier.
+   * @param sessionId - Optional override. Defaults to the session store key.
    */
-  async function clearEvents(sessionId = 'default') {
+  async function clearEvents(sessionId?: string) {
+    const id = resolveSessionId(sessionId)
     try {
-      await api.clearSessionEvents(sessionId)
+      await api.clearSessionEvents(id)
       events.value = []
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Failed to clear events'

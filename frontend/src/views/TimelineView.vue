@@ -6,6 +6,7 @@
  */
 import { onMounted, ref, computed, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useMapStore } from '@/stores/map'
 import { useTimelineStore } from '@/stores/timeline'
 import { useSessionStore } from '@/stores/session'
 import type { TimelineEventOut } from '@/api/timelineAPI'
@@ -13,6 +14,7 @@ import type { TimelineEventOut } from '@/api/timelineAPI'
 const router = useRouter()
 const route = useRoute()
 const timelineStore = useTimelineStore()
+const mapStore = useMapStore()
 const sessionStore = useSessionStore()
 
 const selectedEvent = ref<TimelineEventOut | null>(null)
@@ -95,7 +97,9 @@ function closeDetail() {
 }
 
 async function handleGenerate() {
-  await timelineStore.generateEvents()
+  const response = await timelineStore.generateEvents(sessionStore.sessionId)
+  if (!response) return
+  await mapStore.generateMap(sessionStore.sessionId)
 }
 
 async function handleClear() {

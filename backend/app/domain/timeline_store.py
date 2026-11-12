@@ -28,7 +28,6 @@ class TimelineStore:
             A 12-character hex string.
         """
         return uuid4().hex[:12]
-        return uuid4().hex[:12]
 
     async def add_event(self, event: TimelineEvent) -> TimelineEvent:
         """Add a single event to the store.
@@ -118,6 +117,23 @@ class TimelineStore:
             if event_id in session_events:
                 session_events.remove(event_id)
             return True
+
+    async def replace_session(self, session_id: str, events: list[TimelineEvent]) -> list[TimelineEvent]:
+        """Replace every event for one session with the given list.
+
+        Args:
+            session_id: The session identifier.
+            events: Events that should exist for this session after the call.
+
+        Returns:
+            The stored events.
+        """
+        await self.clear_session(session_id)
+        for event in events:
+            event.session_id = session_id
+        if not events:
+            return []
+        return await self.add_events(events)
 
     async def clear_session(self, session_id: str = 'default') -> int:
         """Clear all events for a session.

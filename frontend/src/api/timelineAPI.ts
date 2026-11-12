@@ -1,4 +1,5 @@
 import { SERVER_CONFIG } from '@/config/config'
+import { UNSAVED_SESSION_ID } from '@/utils/sessionId'
 
 /** The category of a timeline event. */
 export type EventType = 'combat' | 'discovery' | 'dialogue' | 'travel' | 'rest' | 'quest' | 'other'
@@ -55,9 +56,9 @@ async function throwTimelineError(res: Response): Promise<never> {
 
 /**
  * Fetch all timeline events for a given session.
- * @param sessionId - The session identifier (defaults to 'default').
+ * @param sessionId - The session identifier (defaults to 'unsaved').
  */
-export async function listEvents(sessionId = 'default'): Promise<TimelineEventListResponse> {
+export async function listEvents(sessionId = UNSAVED_SESSION_ID): Promise<TimelineEventListResponse> {
   const url = new URL('/timeline/events', base())
   url.searchParams.set('session_id', sessionId)
   const res = await fetch(url.toString())
@@ -88,9 +89,9 @@ export async function deleteEvent(eventId: string): Promise<void> {
 
 /**
  * Delete all timeline events for a session.
- * @param sessionId - The session identifier (defaults to 'default').
+ * @param sessionId - The session identifier (defaults to 'unsaved').
  */
-export async function clearSessionEvents(sessionId = 'default'): Promise<void> {
+export async function clearSessionEvents(sessionId = UNSAVED_SESSION_ID): Promise<void> {
   const url = new URL('/timeline/events', base())
   url.searchParams.set('session_id', sessionId)
   const res = await fetch(url.toString(), { method: 'DELETE' })
@@ -99,9 +100,11 @@ export async function clearSessionEvents(sessionId = 'default'): Promise<void> {
 
 /**
  * Trigger the backend to generate timeline events from transcribed session data.
- * @param sessionId - The session identifier (defaults to 'default').
+ * @param sessionId - The session identifier (defaults to 'unsaved').
  */
-export async function generateEvents(sessionId = 'default'): Promise<TimelineGenerateResponse> {
+export async function generateEvents(
+  sessionId = UNSAVED_SESSION_ID,
+): Promise<TimelineGenerateResponse> {
   const res = await fetch(`${base()}/timeline/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
