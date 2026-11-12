@@ -23,6 +23,7 @@ from app.core.config import settings
 from app.domain.store import store
 from app.domain.timeline_store import timeline_store
 from app.functions.embedding.embedding_model import embedd_transcriptions
+from app.functions.geo.build_map import generate_map
 from app.functions.llm.event_extractor import extract_events_from_transcriptions
 
 torch: Any = None
@@ -151,8 +152,34 @@ def ensure_transcription_models_loaded() -> None:
         print('Transcription model loaded (diarization disabled).')
 
 
+async def _store_timeline_and_map(
+    texts: list[str],
+    speakers: list[str],
+    start_times: list[float],
+    session_id: str,
+) -> None:
+    """Extract timeline events for this session and refresh its map.
+
+    Map generation failures are logged and ignored so transcription still returns.
+    """
+    events = extract_events_from_transcriptions(
+        texts=texts, speakers=speakers, timestamps=start_times, session_id=session_id
+    )
+    if not events:
+        return
+    await timeline_store.add_events(events)
+    print(f'Generated {len(events)} timeline events from transcription.')
+    try:
+        await generate_map(session_id)
+    except Exception as exc:
+        print(f'Warning: map generation failed for session {session_id}: {exc}')
+
+
 async def _transcribe_raw_session_audio(
-    audio_bytes: bytes, file_extension: str, batch_size: int
+    audio_bytes: bytes,
+    file_extension: str,
+    batch_size: int,
+    session_id: str = 'unsaved',
 ) -> list:
     """Transcribe the uploaded session audio without pydub voiceprint prep."""
     temp_audio_dir = Path(settings.backend_root_path) / 'data' / 'tmp_audio'
@@ -220,13 +247,7 @@ async def _transcribe_raw_session_audio(
 
         if texts:
             embedd_transcriptions(embedding_text=texts, speakers=speakers, timestamps=start_times)
-
-            events = extract_events_from_transcriptions(
-                texts=texts, speakers=speakers, timestamps=start_times
-            )
-            if events:
-                await timeline_store.add_events(events)
-                print(f'Generated {len(events)} timeline events from transcription.')
+            await _store_timeline_and_map(texts, speakers, start_times, session_id)
 
         return filtered_segments
     finally:
@@ -239,7 +260,10 @@ async def _transcribe_raw_session_audio(
 
 
 async def transcribe_audio(
-    audio_bytes: bytes, content_type: str, batch_size: int = 16
+    audio_bytes: bytes,
+    content_type: str,
+    batch_size: int = 16,
+    session_id: str = 'unsaved',
 ) -> list | None:
     """Transcribe audio bytes with speaker diarization and voiceprint recognition.
 
@@ -251,6 +275,7 @@ async def transcribe_audio(
         audio_bytes: Raw audio bytes.
         content_type: MIME type of the audio.
         batch_size (int): Batch size for WhisperX transcription.
+        session_id: Campaign/session key for timeline and map storage.
 
     Returns:
         list | None: List of filtered segments with speaker labels, or None on error.
@@ -266,7 +291,9 @@ async def transcribe_audio(
             break
 
     if not settings.enable_diarization:
-        return await _transcribe_raw_session_audio(audio_bytes, fileExtension, batch_size)
+        return await _transcribe_raw_session_audio(
+            audio_bytes, fileExtension, batch_size, session_id
+        )
 
     players = await store.list_players()
     print(len(players))
@@ -391,12 +418,7 @@ async def transcribe_audio(
         if texts:
             embedd_transcriptions(embedding_text=texts, speakers=speakers, timestamps=start_times)
 
-            events = extract_events_from_transcriptions(
-                texts=texts, speakers=speakers, timestamps=start_times
-            )
-            if events:
-                await timeline_store.add_events(events)
-                print(f'Generated {len(events)} timeline events from transcription.')
+            await _store_timeline_and_map(texts, speakers, start_times, session_id)
 
         return filtered_segments
 

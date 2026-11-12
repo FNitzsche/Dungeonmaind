@@ -284,6 +284,7 @@ async function confirmImport() {
     if (!leader) throw new Error('No leader returned from backend')
 
     store.setCurrentPlayer(leader)
+    store.setCampaignSession(selectedCampaign.value, selectedSession.value)
     store.setLocalNetworkIP(lastValidIP)
 
     await router.push({ name: 'home' })

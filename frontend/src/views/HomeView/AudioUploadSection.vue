@@ -5,6 +5,7 @@
  */
 import { ref } from 'vue'
 import { SERVER_CONFIG } from '@/config/config'
+import { useSessionStore } from '@/stores/session'
 
 const selectedAudioFile = ref<File | null>(null)
 const audioUploadStatus = ref<string>('')
@@ -19,6 +20,7 @@ async function handleAudioUpload() {
 
   const formData = new FormData()
   formData.append('audio', selectedAudioFile.value)
+  formData.append('session_id', useSessionStore().sessionId)
 
   isUploading.value = true
   audioUploadStatus.value = 'Audio is uploading, please wait...'

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { PlayerOut, Role, Hp, AbilityScores } from '@/api/playersAPI'
 import * as api from '@/api/playersAPI'
+import { buildSessionId } from '@/utils/sessionId'
 
 /**
  * Session store – manages current player identity, player roster,
@@ -16,6 +17,12 @@ export const useSessionStore = defineStore('session', () => {
   const backendUrl = ref<string | null>(hydrateBackendUrl())
   /** Local network IP for QR-code / join-link sharing (persisted). */
   const localNetworkIP = ref<string | null>(hydrateLocalNetworkIP())
+  /** Saved campaign name for timeline/map persistence, or null if unsaved. */
+  const campaignName = ref<string | null>(hydrateCampaignName())
+  /** Saved session name for timeline/map persistence, or null if unsaved. */
+  const sessionName = ref<string | null>(hydrateSessionName())
+  /** Campaign/session key, or `unsaved` until the session is named. */
+  const sessionId = computed(() => buildSessionId(campaignName.value, sessionName.value))
 
   /** Whether the current player has the `leader` role. */
   const isLeader = computed(() => currentPlayer.value?.role === 'leader')
@@ -159,6 +166,44 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
+  function hydrateCampaignName(): string | null {
+    try {
+      return sessionStorage.getItem('campaignName')
+    } catch {
+      return null
+    }
+  }
+
+  function hydrateSessionName(): string | null {
+    try {
+      return sessionStorage.getItem('sessionName')
+    } catch {
+      return null
+    }
+  }
+
+  function persistCampaignSession(campaign: string | null, session: string | null) {
+    try {
+      if (campaign) sessionStorage.setItem('campaignName', campaign)
+      else sessionStorage.removeItem('campaignName')
+      if (session) sessionStorage.setItem('sessionName', session)
+      else sessionStorage.removeItem('sessionName')
+    } catch {
+      // ignore
+    }
+  }
+
+  /**
+   * Bind timeline/map/transcription APIs to a saved campaign and session name.
+   */
+  function setCampaignSession(campaign: string | null, session: string | null) {
+    const nextCampaign = campaign?.trim() || null
+    const nextSession = session?.trim() || null
+    campaignName.value = nextCampaign
+    sessionName.value = nextSession
+    persistCampaignSession(nextCampaign, nextSession)
+  }
+
   /**
    * Remove the persisted player from sessionStorage.
    */
@@ -259,7 +304,10 @@ export const useSessionStore = defineStore('session', () => {
     players.value = []
     backendUrl.value = null
     localNetworkIP.value = null
+    campaignName.value = null
+    sessionName.value = null
     clearPersist()
+    persistCampaignSession(null, null)
   }
 
   /**
@@ -319,9 +367,13 @@ export const useSessionStore = defineStore('session', () => {
     players,
     backendUrl,
     localNetworkIP,
+    campaignName,
+    sessionName,
+    sessionId,
     // getters
     isLeader,
     // actions
+    setCampaignSession,
     join,
     loadPlayers,
     leave,

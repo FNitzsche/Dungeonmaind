@@ -1,6 +1,6 @@
 """REST API router for audio file upload and transcription."""
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from app.base_models.process_audio_data_base_models import (
     TranscriptionResponse,
@@ -39,18 +39,24 @@ async def upload_audio_file(audio: UploadFile = File(...)) -> UploadAudioFileToD
 
 
 @router.post('/transcribeAudioFile', response_model=TranscriptionResponse)
-async def transcribe_audio_file(audio: UploadFile = File(...)) -> TranscriptionResponse:
+async def transcribe_audio_file(
+    audio: UploadFile = File(...),
+    session_id: str = Form('unsaved'),
+) -> TranscriptionResponse:
     """Transcribe an uploaded audio file using WhisperX.
 
     Args:
         audio (UploadFile): The uploaded audio file.
+        session_id: Campaign/session key. Events and the map are stored under this id.
 
     Returns:
         TranscriptionResponse: TranscriptionResponse with a list of transcribed segments.
     """
     try:
         audio_bytes = await audio.read()
-        transcription = await transcribe_audio(audio_bytes, content_type=audio.content_type)
+        transcription = await transcribe_audio(
+            audio_bytes, content_type=audio.content_type or '', session_id=session_id
+        )
         return TranscriptionResponse(output=transcription)
 
     except Exception as e:

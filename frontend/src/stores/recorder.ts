@@ -306,6 +306,7 @@ export const useRecorderStore = defineStore('recorder', () => {
     const form = new FormData()
     const fileExtension = chunk.type.split('/')[1]?.split(';')[0] || 'ogg'
     form.append('audio', chunk, `chunk_${Date.now()}.${fileExtension}`)
+    form.append('session_id', useSessionStore().sessionId)
 
     try {
       //upload recorded audio chunks to sever for transcription
