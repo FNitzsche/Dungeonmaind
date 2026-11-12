@@ -1,4 +1,5 @@
 import { SERVER_CONFIG } from '@/config/config'
+import { UNSAVED_SESSION_ID } from '@/utils/sessionId'
 
 /** Edge types between places on the campaign map. */
 export type MapEdgeType = 'traveled' | 'near' | 'north_of' | 'inside' | 'other'
@@ -91,9 +92,9 @@ async function getJson<T>(path: string, sessionId: string): Promise<T> {
  * The backend exposes places and links as two separate collections
  * (`/map/locations` and `/map/edges`), so they are requested together and
  * assembled into the single graph the map view renders.
- * @param sessionId - The session identifier (defaults to 'default').
+ * @param sessionId - The session identifier (defaults to 'unsaved').
  */
-export async function getMap(sessionId = 'default'): Promise<MapGraphResponse> {
+export async function getMap(sessionId = UNSAVED_SESSION_ID): Promise<MapGraphResponse> {
   const [locations, edges] = await Promise.all([
     getJson<{ locations: MapLocationOut[] }>('/map/locations', sessionId),
     getJson<{ edges: MapEdgeOut[] }>('/map/edges', sessionId),
@@ -112,6 +113,19 @@ export async function getMap(sessionId = 'default'): Promise<MapGraphResponse> {
       type: toEdgeType(edge.relationship),
     })),
   }
+}
+
+/**
+ * Resolve places and links from the session timeline and save them on the backend.
+ * @param sessionId - The session identifier (defaults to 'unsaved').
+ */
+export async function generateMap(sessionId = UNSAVED_SESSION_ID): Promise<void> {
+  const res = await fetch(`${base()}/map/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: sessionId }),
+  })
+  if (!res.ok) await throwMapError(res)
 }
 
 /**

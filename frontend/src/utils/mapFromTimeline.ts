@@ -239,7 +239,7 @@ function addEdge(
  */
 export function buildMapFromTimeline(
   events: TimelineEventOut[],
-  sessionId = 'default',
+  sessionId = 'unsaved',
 ): MapGraphResponse {
   const allLabels = events.flatMap((event) => event.location_entities)
   const clusters = clusterPlaceNames(allLabels)

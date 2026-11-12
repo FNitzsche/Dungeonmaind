@@ -303,6 +303,11 @@ function edgePath(fromId: string, toId: string): string {
   return `M ${from.x} ${from.y} Q ${cx} ${cy} ${to.x} ${to.y}`
 }
 
+async function handleGenerateMap() {
+  await mapStore.generateMap()
+  fitToJourney()
+}
+
 async function loadMap() {
   const timelineReady =
     timelineStore.events.length === 0 && !timelineStore.loading
@@ -366,14 +371,21 @@ watch(
           >
             Clear selection
           </button>
-          <button class="btn btn-primary" :disabled="mapStore.loading" @click="loadMap">
+          <button
+            class="btn btn-primary"
+            :disabled="mapStore.loading || mapStore.generating"
+            @click="handleGenerateMap"
+          >
+            {{ mapStore.generating ? 'Generating...' : 'Generate map' }}
+          </button>
+          <button class="btn btn-secondary" :disabled="mapStore.loading" @click="loadMap">
             {{ mapStore.loading ? 'Loading...' : 'Refresh Map' }}
           </button>
         </div>
       </header>
 
       <p v-if="mapStore.dataSource === 'timeline'" class="info-banner">
-        Showing places from timeline events until the map API is available.
+        Map API unavailable. Showing places inferred from timeline events.
       </p>
 
       <div v-if="mapStore.error" class="error-banner">
@@ -384,7 +396,7 @@ watch(
 
       <div v-else-if="mapStore.nodeCount === 0" class="empty-state">
         <p>No places on the map yet.</p>
-        <p>Record and transcribe a session, generate timeline events, then refresh this map.</p>
+        <p>Record and transcribe a session, generate timeline events, then generate this map.</p>
         <button class="btn btn-primary" @click="goToTimeline">Go to Timeline</button>
       </div>
 

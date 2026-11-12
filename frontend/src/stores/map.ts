@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import * as mapApi from '@/api/mapAPI'
 import type { MapEdge, MapNode } from '@/api/mapAPI'
+import { useSessionStore } from '@/stores/session'
 import { useTimelineStore } from '@/stores/timeline'
 import { buildMapFromTimeline, locationBelongsToNode, placeToId } from '@/utils/mapFromTimeline'
 
@@ -15,8 +16,9 @@ export type MapDataSource = 'api' | 'timeline'
 export const useMapStore = defineStore('map', () => {
   const nodes = ref<MapNode[]>([])
   const edges = ref<MapEdge[]>([])
-  const sessionId = ref('default')
+  const sessionId = ref('unsaved')
   const loading = ref(false)
+  const generating = ref(false)
   const error = ref<string | null>(null)
   const dataSource = ref<MapDataSource>('timeline')
   const selectedPlaceId = ref<string | null>(null)
@@ -29,26 +31,31 @@ export const useMapStore = defineStore('map', () => {
     () => nodes.value.find((node) => node.id === selectedPlaceId.value) ?? null,
   )
 
+  function resolveSessionId(forSessionId?: string) {
+    return forSessionId ?? useSessionStore().sessionId
+  }
+
   /**
    * Load map data for a session. Uses backend API when available, otherwise timeline events.
    */
-  async function fetchMap(forSessionId = 'default') {
+  async function fetchMap(forSessionId?: string) {
+    const id = resolveSessionId(forSessionId)
     loading.value = true
     error.value = null
-    sessionId.value = forSessionId
+    sessionId.value = id
 
     try {
-      const response = await mapApi.getMap(forSessionId)
+      const response = await mapApi.getMap(id)
       nodes.value = response.nodes ?? []
       edges.value = response.edges ?? []
       dataSource.value = 'api'
     } catch (apiError) {
       const timelineStore = useTimelineStore()
       if (timelineStore.events.length === 0 && !timelineStore.loading) {
-        await timelineStore.fetchEvents(forSessionId)
+        await timelineStore.fetchEvents(id)
       }
 
-      const fallback = buildMapFromTimeline(timelineStore.events, forSessionId)
+      const fallback = buildMapFromTimeline(timelineStore.events, id)
       nodes.value = fallback.nodes
       edges.value = fallback.edges
       dataSource.value = 'timeline'
@@ -62,6 +69,25 @@ export const useMapStore = defineStore('map', () => {
       }
     } finally {
       loading.value = false
+    }
+  }
+
+  /**
+   * Ask the backend to build and save the map, then reload it.
+   * @param forSessionId - Optional override. Defaults to the session store key.
+   */
+  async function generateMap(forSessionId?: string) {
+    const id = resolveSessionId(forSessionId)
+    if (generating.value) return
+    generating.value = true
+    error.value = null
+    try {
+      await mapApi.generateMap(id)
+      await fetchMap(id)
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Failed to generate map'
+    } finally {
+      generating.value = false
     }
   }
 
@@ -113,6 +139,7 @@ export const useMapStore = defineStore('map', () => {
     edges,
     sessionId,
     loading,
+    generating,
     error,
     dataSource,
     selectedPlaceId,
@@ -121,6 +148,7 @@ export const useMapStore = defineStore('map', () => {
     edgeCount,
     selectedNode,
     fetchMap,
+    generateMap,
     selectPlace,
     resolvePlaceQuery,
     clearSelection,

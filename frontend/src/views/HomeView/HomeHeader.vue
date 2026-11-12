@@ -189,7 +189,7 @@ async function onExport() {
   showNameModal.value = false
 
   try {
-    await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.EXPORT_SESSION}`, {
+    const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.EXPORT_SESSION}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -197,6 +197,10 @@ async function onExport() {
         session_name: sessionName.value,
       }),
     })
+    if (!res.ok) {
+      throw new Error(`Save failed (${res.status})`)
+    }
+    store.setCampaignSession(campaign, name)
   } catch (err) {
     console.error(err)
     if (err instanceof Error) {
@@ -237,7 +241,7 @@ async function confirmOverwrite() {
 
   if (overwriteSuccessful) {
     try {
-      await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.EXPORT_SESSION}`, {
+      const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.EXPORT_SESSION}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -245,8 +249,12 @@ async function confirmOverwrite() {
           session_name: name,
         }),
       })
+      if (!res.ok) {
+        throw new Error(`Save failed (${res.status})`)
+      }
 
       savingSuccessful = true
+      if (campaign && name) store.setCampaignSession(campaign, name)
     } catch (err) {
       console.error(err)
       if (err instanceof Error) {
