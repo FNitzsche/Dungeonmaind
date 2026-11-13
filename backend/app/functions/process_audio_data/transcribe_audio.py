@@ -22,6 +22,7 @@ from uuid import uuid4
 from app.core.config import settings
 from app.domain.store import store
 from app.domain.timeline_store import timeline_store
+from app.domain.transcript_store import TranscriptSegment, transcript_store
 from app.functions.embedding.embedding_model import embedd_transcriptions
 from app.functions.geo.build_map import generate_map
 from app.functions.llm.event_extractor import extract_events_from_transcriptions
@@ -152,11 +153,28 @@ def ensure_transcription_models_loaded() -> None:
         print('Transcription model loaded (diarization disabled).')
 
 
+async def _store_transcript(segments: list, session_id: str) -> None:
+    """Keep the transcribed segments for this session so they are saved as transcript.json."""
+    stored = []
+    for seg in segments:
+        text = seg.get('text', '').strip()
+        if not text:
+            continue
+        start = float(seg.get('start', 0.0))
+        stored.append(
+            TranscriptSegment(
+                start=start,
+                end=float(seg.get('end', start)),
+                text=text,
+                speaker=str(seg.get('speaker') or 'unknown'),
+            )
+        )
+    if stored:
+        await transcript_store.add_segments(session_id, stored)
+
+
 async def _store_timeline_and_map(
-    texts: list[str],
-    speakers: list[str],
-    start_times: list[float],
-    session_id: str,
+    texts: list[str], speakers: list[str], start_times: list[float], session_id: str
 ) -> None:
     """Extract timeline events for this session and refresh its map.
 
@@ -176,10 +194,7 @@ async def _store_timeline_and_map(
 
 
 async def _transcribe_raw_session_audio(
-    audio_bytes: bytes,
-    file_extension: str,
-    batch_size: int,
-    session_id: str = 'unsaved',
+    audio_bytes: bytes, file_extension: str, batch_size: int, session_id: str = 'unsaved'
 ) -> list:
     """Transcribe the uploaded session audio without pydub voiceprint prep."""
     temp_audio_dir = Path(settings.backend_root_path) / 'data' / 'tmp_audio'
@@ -246,6 +261,7 @@ async def _transcribe_raw_session_audio(
             start_times.append(float(seg.get('start', 0.0)))
 
         if texts:
+            await _store_transcript(filtered_segments, session_id)
             embedd_transcriptions(embedding_text=texts, speakers=speakers, timestamps=start_times)
             await _store_timeline_and_map(texts, speakers, start_times, session_id)
 
@@ -260,10 +276,7 @@ async def _transcribe_raw_session_audio(
 
 
 async def transcribe_audio(
-    audio_bytes: bytes,
-    content_type: str,
-    batch_size: int = 16,
-    session_id: str = 'unsaved',
+    audio_bytes: bytes, content_type: str, batch_size: int = 16, session_id: str = 'unsaved'
 ) -> list | None:
     """Transcribe audio bytes with speaker diarization and voiceprint recognition.
 
@@ -416,6 +429,7 @@ async def transcribe_audio(
             start_times.append(float(seg.get('start', 0.0)))
 
         if texts:
+            await _store_transcript(filtered_segments, session_id)
             embedd_transcriptions(embedding_text=texts, speakers=speakers, timestamps=start_times)
 
             await _store_timeline_and_map(texts, speakers, start_times, session_id)

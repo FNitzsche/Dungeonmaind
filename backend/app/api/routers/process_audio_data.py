@@ -40,8 +40,7 @@ async def upload_audio_file(audio: UploadFile = File(...)) -> UploadAudioFileToD
 
 @router.post('/transcribeAudioFile', response_model=TranscriptionResponse)
 async def transcribe_audio_file(
-    audio: UploadFile = File(...),
-    session_id: str = Form('unsaved'),
+    audio: UploadFile = File(...), session_id: str = Form('unsaved')
 ) -> TranscriptionResponse:
     """Transcribe an uploaded audio file using WhisperX.
 

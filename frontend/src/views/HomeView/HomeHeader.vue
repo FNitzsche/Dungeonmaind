@@ -195,6 +195,8 @@ async function onExport() {
       body: JSON.stringify({
         campaign_name: selectedCampaign.value,
         session_name: sessionName.value,
+        // Where the transcript, timeline and map live until this save re-keys them
+        source_session_id: store.sessionId,
       }),
     })
     if (!res.ok) {
@@ -247,6 +249,7 @@ async function confirmOverwrite() {
         body: JSON.stringify({
           campaign_name: campaign,
           session_name: name,
+          source_session_id: store.sessionId,
         }),
       })
       if (!res.ok) {
