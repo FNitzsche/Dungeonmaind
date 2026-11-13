@@ -1,5 +1,57 @@
 # Changelog
 
+## v0.4.0 — unreleased (Release 4, in progress)
+
+### Overview
+
+Release 4 continues the Geographic Mapping feature. This first part makes a session's
+transcript, timeline and map part of a saved session, so they survive saving, loading
+and a backend restart.
+
+### Added
+
+- **Session files** (`backend/app/functions/export_import/session_files.py`)
+  - A saved session folder now also contains `transcript.json`, `timeline.json` and `map.json`
+  - `transcript.json` holds `start`, `end`, `text` and `speaker` for each transcribed segment
+  - `timeline.json` holds the timeline events; `map.json` holds the map locations and edges
+  - Sessions saved before v0.4 still load; the missing files count as empty
+
+- **Transcript store** (`backend/app/domain/transcript_store.py`)
+  - In-memory, per-session list of transcribed segments, filled during transcription
+
+- **Session re-keying** (`timeline_store.py`, `map_store.py`, `transcript_store.py`)
+  - `rename_session` moves a session's data from the `unsaved` key to `campaign/session`
+    when it is saved, so the timeline and map no longer look empty after saving
+
+- **Tests**
+  - `backend/tests/test_session_files.py`: export/import round trip, all-or-nothing save,
+    older saves, malformed files, re-keying
+  - `frontend/src/utils/__tests__/sessionId.spec.ts` and
+    `frontend/src/stores/__tests__/session.spec.ts`: session key handling
+
+### Changed
+
+- `POST /exportImport/export`
+  - Accepts an optional `source_session_id` (the key the transcript, timeline and map are
+    currently stored under; defaults to `unsaved`)
+  - The save is all-or-nothing: everything is written to a hidden staging folder and moved
+    into place only when every part succeeded. A failed save leaves an older save untouched
+    and returns an error
+- `POST /exportImport/import` validates the three session files before changing anything,
+  then loads them under the `campaign/session` key
+- `GET /exportImport/getCampaigns` and `getSessions` ignore hidden folders
+- `frontend/src/views/HomeView/HomeHeader.vue` sends the current session key when saving
+- `.github/workflows/ci.yml` runs the frontend unit tests (Vitest) again
+- Formatting only: `process_audio_data.py`, `timeline_store.py` and `transcribe_audio.py`
+  now pass `ruff format --check`
+
+### Technical Notes
+
+- Timeline, map and transcript are still held in memory while a session is running; they
+  are written to disk when the session is saved.
+- Segment times in `transcript.json` are relative to the uploaded audio chunk, as produced
+  by transcription today. A session-wide clock is planned for a later part of this release.
+
 ## v0.0.1 — 2026-07-09
 
 ### Overview
