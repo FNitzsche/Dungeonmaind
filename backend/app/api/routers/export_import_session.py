@@ -23,13 +23,20 @@ from app.functions.export_import.export_session import (
     copy_chroma_db,
     export_group_to_json,
     export_settings_to_json,
-    get_folder_name,
     rename_folder,
 )
 from app.functions.export_import.import_session import (
     load_groups_from_json,
     load_settings_from_json,
     replace_chroma_db,
+)
+from app.functions.export_import.session_files import (
+    UNSAVED_SESSION_ID,
+    SessionFileError,
+    apply_session_files,
+    build_session_id,
+    read_session_files,
+    save_session_folder,
 )
 
 router = APIRouter()
@@ -41,11 +48,19 @@ DATA_DIR = os.path.join(settings.backend_root_path, 'data')
 
 
 @router.post('/export')
-def export_session(req: ExportRequest) -> None:
-    """Export the current session (group, settings, ChromaDB) to a folder.
+async def export_session(req: ExportRequest) -> None:
+    """Export the current session to a folder.
+
+    Saves the group, settings and ChromaDB together with the session's
+    transcript.json, timeline.json and map.json. The save is all-or-nothing:
+    if any part fails, no session folder is created or changed.
 
     Args:
-        req: ExportRequest with campaign and session names.
+        req: ExportRequest with campaign and session names, and optionally the
+            session key the transcript, timeline and map are currently held under.
+
+    Raises:
+        HTTPException 500: If a session file could not be saved.
     """
     campaign_folder_path = os.path.join(SAVED_SESSIONS_DIR, req.campaign_name)
     try:
@@ -57,15 +72,26 @@ def export_session(req: ExportRequest) -> None:
             status.HTTP_403_FORBIDDEN,
             detail=f'Can not create campaign folder at {campaign_folder_path}',
         )
-    folder_path = get_folder_name(req.campaign_name, req.session_name)
-    export_group_to_json(folder_path)
-    export_settings_to_json(folder_path)
-    copy_chroma_db(folder_path)  # What is if at this point not all transcriptions are calculated?
+    # What is if at this point not all transcriptions are calculated?
+    try:
+        await save_session_folder(
+            campaign_folder_path,
+            req.session_name,
+            source_session_id=req.source_session_id or UNSAVED_SESSION_ID,
+            target_session_id=build_session_id(req.campaign_name, req.session_name),
+            writers=(export_group_to_json, export_settings_to_json, copy_chroma_db),
+        )
+    except SessionFileError as exc:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
 
 @router.post('/import')
 async def import_session(req: ImportRequest, request: Request) -> PlayerOut:
-    """Import a saved session (group, settings, ChromaDB) from a folder.
+    """Import a saved session from a folder.
+
+    Restores the group, settings and ChromaDB, and loads transcript.json,
+    timeline.json and map.json into their stores under the campaign/session
+    key. The three session files are validated before anything is changed.
 
     Args:
         req: ImportRequest with campaign and session names.
@@ -79,12 +105,18 @@ async def import_session(req: ImportRequest, request: Request) -> PlayerOut:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND, detail=f"Session folder '{req.session_name}' does not exist."
         )
+    try:
+        session_files = read_session_files(folder_path)
+    except SessionFileError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
     file_path_settings = os.path.join(folder_path, 'settings.json')
     load_settings_from_json(file_path_settings)
     file_path_groups = os.path.join(folder_path, 'group.json')
     leader = load_groups_from_json(file_path_groups)
 
     replace_chroma_db(folder_path, DATA_DIR)
+    await apply_session_files(session_files, build_session_id(req.campaign_name, req.session_name))
 
     # Maybe the publishing has to be player by player, so that actually only those players are shown, which actually
     # newly logged in the loaded session
@@ -107,7 +139,9 @@ def get_sessions() -> None:
     if not base_path.exists() or not base_path.is_dir():
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f'Invalid path: {SAVED_SESSIONS_DIR}')
 
-    folder_names = [item.name for item in base_path.iterdir() if item.is_dir()]
+    folder_names = [
+        item.name for item in base_path.iterdir() if item.is_dir() and not item.name.startswith('.')
+    ]
 
     return Sessions(folders=folder_names)
 
@@ -129,7 +163,10 @@ def get_campaigns() -> Campaigns:
     for campaign_dir in base_path.iterdir():
         if campaign_dir.is_dir():
             # List session subfolders inside each campaign
-            session_names = [s.name for s in campaign_dir.iterdir() if s.is_dir()]
+            # Hidden folders are in-progress saves, not sessions
+            session_names = [
+                s.name for s in campaign_dir.iterdir() if s.is_dir() and not s.name.startswith('.')
+            ]
 
             campaigns[campaign_dir.name] = Sessions(folders=session_names)
 

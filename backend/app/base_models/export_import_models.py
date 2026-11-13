@@ -13,12 +13,18 @@ class ExportRequest(BaseModel):
     Attributes:
         campaign_name: Name of the campaign under which to save.
         session_name: Name of the session to save.
+        source_session_id: Session key the transcript, timeline and map are
+            currently stored under ('unsaved' until the first save).
     """
 
     campaign_name: str = Field(
         ..., description='Name of the campaign where the session has to be saved'
     )
     session_name: str = Field(..., description='Name of the session to be saved')
+    source_session_id: str | None = Field(
+        default=None,
+        description='Session key the transcript, timeline and map are currently stored under',
+    )
 
 
 class ImportRequest(BaseModel):
