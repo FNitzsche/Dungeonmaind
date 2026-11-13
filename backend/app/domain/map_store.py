@@ -78,6 +78,34 @@ class MapStore:
         async with self._lock:
             return session_id in self._locations
 
+    async def rename_session(self, old_session_id: str, new_session_id: str) -> bool:
+        """Move a session's saved map to a new session ID.
+
+        A map already saved under the new ID is replaced. Does nothing when
+        both IDs are equal or no map is saved under the old ID.
+
+        Args:
+            old_session_id: The session identifier the map is saved under.
+            new_session_id: The session identifier it should be saved under.
+
+        Returns:
+            True if a saved map was moved, False otherwise.
+        """
+        if old_session_id == new_session_id:
+            return False
+        async with self._lock:
+            if old_session_id not in self._locations:
+                return False
+            locations = self._locations.pop(old_session_id)
+            edges = self._edges.pop(old_session_id, [])
+            for location in locations:
+                location.session_id = new_session_id
+            for edge in edges:
+                edge.session_id = new_session_id
+            self._locations[new_session_id] = locations
+            self._edges[new_session_id] = edges
+            return True
+
     async def clear_session(self, session_id: str) -> bool:
         """Clear a session's saved map.
 

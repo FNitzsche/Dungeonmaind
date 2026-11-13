@@ -118,7 +118,9 @@ class TimelineStore:
                 session_events.remove(event_id)
             return True
 
-    async def replace_session(self, session_id: str, events: list[TimelineEvent]) -> list[TimelineEvent]:
+    async def replace_session(
+        self, session_id: str, events: list[TimelineEvent]
+    ) -> list[TimelineEvent]:
         """Replace every event for one session with the given list.
 
         Args:
@@ -134,6 +136,32 @@ class TimelineStore:
         if not events:
             return []
         return await self.add_events(events)
+
+    async def rename_session(self, old_session_id: str, new_session_id: str) -> int:
+        """Move every event of one session to a new session ID.
+
+        Events already stored under the new ID are replaced. Does nothing
+        when both IDs are equal.
+
+        Args:
+            old_session_id: The session identifier the events are stored under.
+            new_session_id: The session identifier they should be stored under.
+
+        Returns:
+            The number of events moved.
+        """
+        if old_session_id == new_session_id:
+            return 0
+        async with self._lock:
+            for stale_id in self._by_session.pop(new_session_id, []):
+                self._events.pop(stale_id, None)
+            event_ids = self._by_session.pop(old_session_id, [])
+            for event_id in event_ids:
+                event = self._events.get(event_id)
+                if event is not None:
+                    event.session_id = new_session_id
+            self._by_session[new_session_id] = event_ids
+            return len(event_ids)
 
     async def clear_session(self, session_id: str = 'default') -> int:
         """Clear all events for a session.
