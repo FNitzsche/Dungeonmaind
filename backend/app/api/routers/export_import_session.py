@@ -17,7 +17,9 @@ from app.base_models.export_import_models import (
 from app.base_models.schemas import PlayerOut
 from app.core.bus import bus
 from app.core.config import settings
+from app.domain.session_state import session_registry
 from app.domain.store import store
+from app.functions.embedding.embedding_model import adopt_legacy_transcriptions
 from app.functions.export_import.delete_session import delete_folder
 from app.functions.export_import.export_session import (
     copy_chroma_db,
@@ -31,7 +33,6 @@ from app.functions.export_import.import_session import (
     replace_chroma_db,
 )
 from app.functions.export_import.session_files import (
-    UNSAVED_SESSION_ID,
     SessionFileError,
     apply_session_files,
     build_session_id,
@@ -57,7 +58,8 @@ async def export_session(req: ExportRequest) -> None:
 
     Args:
         req: ExportRequest with campaign and session names, and optionally the
-            session key the transcript, timeline and map are currently held under.
+            session key the transcript, timeline and map are currently held under
+            (the active session by default).
 
     Raises:
         HTTPException 500: If a session file could not be saved.
@@ -77,7 +79,7 @@ async def export_session(req: ExportRequest) -> None:
         await save_session_folder(
             campaign_folder_path,
             req.session_name,
-            source_session_id=req.source_session_id or UNSAVED_SESSION_ID,
+            source_session_id=session_registry.resolve(req.source_session_id),
             target_session_id=build_session_id(req.campaign_name, req.session_name),
             writers=(export_group_to_json, export_settings_to_json, copy_chroma_db),
         )
@@ -116,12 +118,24 @@ async def import_session(req: ImportRequest, request: Request) -> PlayerOut:
     leader = load_groups_from_json(file_path_groups)
 
     replace_chroma_db(folder_path, DATA_DIR)
-    await apply_session_files(session_files, build_session_id(req.campaign_name, req.session_name))
+    session_id = build_session_id(req.campaign_name, req.session_name)
+    await apply_session_files(session_files, session_id)
+    if session_files.session_uid is None:
+        # Saved before transcript chunks carried a session: the untagged chunks in
+        # this session's own database copy belong to it.
+        try:
+            adopt_legacy_transcriptions(session_id)
+        except Exception as exc:
+            print(f'Warning: could not assign older transcriptions to {session_id}: {exc}')
 
     # Maybe the publishing has to be player by player, so that actually only those players are shown, which actually
     # newly logged in the loaded session
     await bus.publish(
-        {'type': 'session_imported', 'players': [p.name for p in store.group.players.values()]}
+        {
+            'type': 'session_imported',
+            'players': [p.name for p in store.group.players.values()],
+            'session_id': session_id,
+        }
     )
 
     return player_to_out(leader, request)

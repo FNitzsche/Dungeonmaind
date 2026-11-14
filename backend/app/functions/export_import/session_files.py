@@ -27,6 +27,7 @@ from app.domain.map_edge import MapEdge
 from app.domain.map_location import MapLocation
 from app.domain.map_store import map_store
 from app.domain.models import TimelineEvent
+from app.domain.session_state import session_registry
 from app.domain.timeline_store import timeline_store
 from app.domain.transcript_store import TranscriptSegment, transcript_store
 
@@ -55,6 +56,8 @@ class SessionFiles:
         map_generated: Whether a map had been generated when the session was saved.
         locations: Resolved map locations.
         edges: Inferred map edges.
+        session_uid: Permanent uid of the session, or None for a session
+            saved before sessions had one.
     """
 
     segments: list[TranscriptSegment] = field(default_factory=list)
@@ -62,6 +65,7 @@ class SessionFiles:
     map_generated: bool = False
     locations: list[MapLocation] = field(default_factory=list)
     edges: list[MapEdge] = field(default_factory=list)
+    session_uid: str | None = None
 
 
 def build_session_id(campaign_name: str, session_name: str) -> str:
@@ -127,6 +131,7 @@ async def write_session_files(
         SessionFileError: If any of the three files could not be written.
     """
     stored_id = stored_session_id or session_id
+    session_uid = session_registry.uid_for(session_id)
     segments = await transcript_store.get_segments(session_id)
     events = await timeline_store.get_session_events(session_id)
     locations = await map_store.get_locations(session_id)
@@ -141,6 +146,7 @@ async def write_session_files(
         {
             'version': FORMAT_VERSION,
             'session_id': stored_id,
+            'session_uid': session_uid,
             'segments': [segment.to_dict() for segment in segments],
         },
     )
@@ -150,6 +156,7 @@ async def write_session_files(
         {
             'version': FORMAT_VERSION,
             'session_id': stored_id,
+            'session_uid': session_uid,
             'events': [with_session(event.to_dict()) for event in events],
         },
     )
@@ -159,6 +166,7 @@ async def write_session_files(
         {
             'version': FORMAT_VERSION,
             'session_id': stored_id,
+            'session_uid': session_uid,
             'generated': locations is not None,
             'locations': [with_session(location.to_dict()) for location in locations or []],
             'edges': [with_session(edge.to_dict()) for edge in edges or []],
@@ -215,7 +223,16 @@ def read_session_files(folder_path: str) -> SessionFiles:
         raise SessionFileError(f'{MAP_FILE} has an invalid location or edge: {exc}') from exc
 
     map_generated = bool(map_data.get('generated', bool(locations))) if map_data else False
+    session_uid = next(
+        (
+            str(data['session_uid'])
+            for data in (transcript_data, timeline_data, map_data)
+            if data and data.get('session_uid')
+        ),
+        None,
+    )
     return SessionFiles(
+        session_uid=session_uid,
         segments=segments,
         events=events,
         map_generated=map_generated,
@@ -227,12 +244,14 @@ def read_session_files(folder_path: str) -> SessionFiles:
 async def apply_session_files(files: SessionFiles, session_id: str) -> None:
     """Load parsed session files into the transcript, timeline and map stores.
 
-    Whatever the stores held for ``session_id`` is replaced.
+    Whatever the stores held for ``session_id`` is replaced, and the session
+    becomes the active session of the backend.
 
     Args:
         files: Parsed session files from :func:`read_session_files`.
         session_id: Store key the data is loaded under.
     """
+    session_registry.activate(session_id, files.session_uid)
     await transcript_store.replace_session(session_id, files.segments)
     await timeline_store.replace_session(session_id, files.events)
     if files.map_generated:
@@ -262,10 +281,15 @@ async def load_session_files(folder_path: str, session_id: str) -> SessionFiles:
 
 
 async def rekey_session(old_session_id: str, new_session_id: str) -> None:
-    """Move a session's transcript, timeline and map to a new session ID."""
+    """Move a session's transcript, timeline and map to a new session ID.
+
+    The session keeps its permanent uid, so its transcript chunks in the
+    vector database stay attached to it without being rewritten.
+    """
     await transcript_store.rename_session(old_session_id, new_session_id)
     await timeline_store.rename_session(old_session_id, new_session_id)
     await map_store.rename_session(old_session_id, new_session_id)
+    session_registry.rename(old_session_id, new_session_id)
 
 
 async def save_session_folder(

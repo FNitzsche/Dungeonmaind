@@ -14,7 +14,7 @@ class ExportRequest(BaseModel):
         campaign_name: Name of the campaign under which to save.
         session_name: Name of the session to save.
         source_session_id: Session key the transcript, timeline and map are
-            currently stored under ('unsaved' until the first save).
+            currently stored under. Defaults to the active session.
     """
 
     campaign_name: str = Field(
