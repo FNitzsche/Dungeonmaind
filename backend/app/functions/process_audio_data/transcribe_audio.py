@@ -262,7 +262,12 @@ async def _transcribe_raw_session_audio(
 
         if texts:
             await _store_transcript(filtered_segments, session_id)
-            embedd_transcriptions(embedding_text=texts, speakers=speakers, timestamps=start_times)
+            embedd_transcriptions(
+                embedding_text=texts,
+                speakers=speakers,
+                timestamps=start_times,
+                session_id=session_id,
+            )
             await _store_timeline_and_map(texts, speakers, start_times, session_id)
 
         return filtered_segments
@@ -430,7 +435,12 @@ async def transcribe_audio(
 
         if texts:
             await _store_transcript(filtered_segments, session_id)
-            embedd_transcriptions(embedding_text=texts, speakers=speakers, timestamps=start_times)
+            embedd_transcriptions(
+                embedding_text=texts,
+                speakers=speakers,
+                timestamps=start_times,
+                session_id=session_id,
+            )
 
             await _store_timeline_and_map(texts, speakers, start_times, session_id)
 

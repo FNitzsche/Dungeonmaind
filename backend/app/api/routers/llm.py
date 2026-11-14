@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 
 from app.base_models.llm_base_models import LLMRequest
 from app.core.chat_store import chat_store
+from app.domain.session_state import session_registry
 from app.domain.store import store
 from app.functions.embedding.embedding_model import (
     embed_text,
@@ -63,11 +64,12 @@ async def run_llm(req: LLMRequest) -> StreamingResponse:
     # 2) Nachricht speichern
     print('speichere nachricht')
 
-    # 3) Embeddings erhalten für system prompt
+    # 3) Embeddings erhalten für system prompt (only this session's transcript)
+    session_id = session_registry.resolve(req.session_id)
     if not req.use_rulebook and _is_entity_listing_request(req.input_string):
-        retrieved_docs = get_all_transcription_documents()
+        retrieved_docs = get_all_transcription_documents(session_id=session_id)
     else:
-        retrieved_docs = embedding_search(req.input_string, req.use_rulebook)
+        retrieved_docs = embedding_search(req.input_string, req.use_rulebook, session_id=session_id)
 
     embedded_request = embed_text(req.input_string)
     top_k_chat_history = await embedding_search_on_chat_history(

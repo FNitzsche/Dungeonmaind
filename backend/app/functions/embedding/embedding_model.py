@@ -12,11 +12,32 @@ from langchain_core.documents import Document
 
 from app.core.chat_store import chat_store
 from app.core.config import settings
+from app.domain.session_state import LEGACY_TRANSCRIPT_UID, session_registry
 from app.functions.embedding.entity_extractor import entities_as_metadata
 
 
+def _transcription_filter(session_id: str | None) -> dict:
+    """Build the metadata filter for transcription chunks.
+
+    Args:
+        session_id: Session key to restrict the chunks to. None matches the
+            transcriptions of every session.
+
+    Returns:
+        A ChromaDB ``where`` filter.
+    """
+    if session_id is None:
+        return {'source': 'transcriptions'}
+    return {
+        '$and': [{'source': 'transcriptions'}, {'session_id': session_registry.uid_for(session_id)}]
+    }
+
+
 def embedding_search(
-    query: str, source: bool = False, persist_directory: str | None = None
+    query: str,
+    source: bool = False,
+    persist_directory: str | None = None,
+    session_id: str | None = None,
 ) -> list[Document]:
     """Perform similarity search over ChromaDB embeddings.
 
@@ -25,6 +46,8 @@ def embedding_search(
         source (bool): If True, search only rulebook embeddings; otherwise search
             both rulebook and transcriptions.
         persist_directory (str | None): Optional custom ChromaDB path.
+        session_id: Session key whose transcriptions may be searched. None
+            searches the transcriptions of every session.
 
     Returns:
         list[Document]: List of Document objects from the vector store.
@@ -46,7 +69,7 @@ def embedding_search(
     else:
         results_rulebook = vectorstore.similarity_search(query, k=2, filter={'source': 'rulebook'})
         results_transcriptions = vectorstore.similarity_search(
-            query, k=settings.embedding_top_k, filter={'source': 'transcriptions'}
+            query, k=settings.embedding_top_k, filter=_transcription_filter(session_id)
         )
 
         results = results_rulebook + results_transcriptions
@@ -62,11 +85,15 @@ def embedding_search(
     return results
 
 
-def get_all_transcription_documents(persist_directory: str | None = None) -> list[Document]:
-    """Retrieve all transcription documents from ChromaDB.
+def get_all_transcription_documents(
+    persist_directory: str | None = None, session_id: str | None = None
+) -> list[Document]:
+    """Retrieve transcription documents from ChromaDB.
 
     Args:
         persist_directory (str | None): Optional custom ChromaDB path.
+        session_id: Session key whose transcriptions are returned. None
+            returns the transcriptions of every session.
 
     Returns:
         List of Document objects with source='transcriptions'.
@@ -76,7 +103,7 @@ def get_all_transcription_documents(persist_directory: str | None = None) -> lis
 
     vectorstore = Chroma(persist_directory=persist_directory)
     entries = vectorstore._collection.get(
-        where={'source': 'transcriptions'}, include=['documents', 'metadatas']
+        where=_transcription_filter(session_id), include=['documents', 'metadatas']
     )
 
     documents = entries.get('documents') or []
@@ -92,14 +119,19 @@ def embedd_transcriptions(
     speakers: list[str],
     timestamps: list[float] | None = None,
     persist_directory: str | None = None,
+    session_id: str | None = None,
 ):
     """Embed transcription texts with speaker metadata into ChromaDB.
+
+    Every chunk is tagged with the permanent uid of its session, so
+    retrieval can be restricted to one session.
 
     Args:
         embedding_text (list[str]): List of text strings to embed.
         speakers: List of speaker names corresponding to each text.
         timestamps: Optional list of audio start times (seconds) for each text.
         persist_directory (str | None): Optional custom ChromaDB path.
+        session_id: Key of the session the texts were recorded in.
 
     Raises:
         ValueError: If embedding_text and speakers have different lengths.
@@ -117,6 +149,8 @@ def embedd_transcriptions(
             f'timestamps ({len(timestamps)}) and embedding_text ({len(embedding_text)}) must have the same length'
         )
 
+    session_uid = session_registry.uid_for(session_id) if session_id else LEGACY_TRANSCRIPT_UID
+
     # Load embedding model locally
     embedding_model = SentenceTransformerEmbeddings(model_name=settings.embedding_model)
 
@@ -126,7 +160,7 @@ def embedd_transcriptions(
         metadata = {
             'source': 'transcriptions',
             'player_id': speakers[i],
-            'session_id': 'none',  # Update here later
+            'session_id': session_uid,
             'path': 'none',
             **entity_metadata,
         }
@@ -135,6 +169,46 @@ def embedd_transcriptions(
         documents.append(Document(page_content=text, metadata=metadata))
 
     write_to_ChromaDB(persist_directory, documents, embedding_model)
+
+
+def adopt_legacy_transcriptions(session_id: str, persist_directory: str | None = None) -> int:
+    """Assign transcription chunks without a session to the given session.
+
+    Sessions saved before chunks were tagged contain transcriptions marked
+    with the placeholder session ``none``. When such a session is loaded, the
+    chunks in its own database copy are tagged with the loaded session, so
+    they can be found again. The saved original is not touched.
+
+    Args:
+        session_id: Key of the session that takes over the untagged chunks.
+        persist_directory (str | None): Optional custom ChromaDB path.
+
+    Returns:
+        The number of chunks that were assigned.
+    """
+    if persist_directory is None:
+        persist_directory = settings.chroma_db_path
+
+    if not os.path.exists(os.path.join(persist_directory, 'chroma.sqlite3')):
+        return 0
+
+    collection = Chroma(persist_directory=persist_directory)._collection
+    entries = collection.get(
+        where={'$and': [{'source': 'transcriptions'}, {'session_id': LEGACY_TRANSCRIPT_UID}]},
+        include=['metadatas'],
+    )
+    ids = entries.get('ids') or []
+    if not ids:
+        return 0
+
+    session_uid = session_registry.uid_for(session_id)
+    metadatas = [
+        {**(metadata or {}), 'session_id': session_uid}
+        for metadata in entries.get('metadatas') or []
+    ]
+    collection.update(ids=ids, metadatas=metadatas)
+    print(f'Assigned {len(ids)} untagged transcriptions to session {session_id}')
+    return len(ids)
 
 
 def embedd_rulebook(

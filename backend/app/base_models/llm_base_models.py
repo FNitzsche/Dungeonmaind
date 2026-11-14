@@ -12,11 +12,15 @@ class LLMRequest(BaseModel):
         player_id: The ID of the player making the request.
         input_string: The text prompt for the LLM.
         use_rulebook: Whether to include rulebook context in the response.
+        session_id: Session whose transcript may be used (defaults to the active session).
     """
 
     player_id: UUID = Field(..., description='ID aus /players')
     input_string: str = Field(..., description='Text prompt for the custom model')
     use_rulebook: bool = Field(False, description='Whether to consult the rulebook for the answer')
+    session_id: str | None = Field(
+        None, description='Session whose transcript may be used; defaults to the active session'
+    )
 
 
 class LLMResponse(BaseModel):

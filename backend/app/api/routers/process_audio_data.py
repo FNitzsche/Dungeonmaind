@@ -6,6 +6,7 @@ from app.base_models.process_audio_data_base_models import (
     TranscriptionResponse,
     UploadAudioFileToDBResponse,
 )
+from app.domain.session_state import session_registry
 from app.functions.process_audio_data.extract_audio_metadata import extract_audio_metadata
 from app.functions.process_audio_data.transcribe_audio import transcribe_audio
 
@@ -40,13 +41,14 @@ async def upload_audio_file(audio: UploadFile = File(...)) -> UploadAudioFileToD
 
 @router.post('/transcribeAudioFile', response_model=TranscriptionResponse)
 async def transcribe_audio_file(
-    audio: UploadFile = File(...), session_id: str = Form('unsaved')
+    audio: UploadFile = File(...), session_id: str | None = Form(None)
 ) -> TranscriptionResponse:
     """Transcribe an uploaded audio file using WhisperX.
 
     Args:
         audio (UploadFile): The uploaded audio file.
-        session_id: Campaign/session key. Events and the map are stored under this id.
+        session_id: Session key. Transcript, events and map are stored under this id.
+            Defaults to the active session.
 
     Returns:
         TranscriptionResponse: TranscriptionResponse with a list of transcribed segments.
@@ -54,7 +56,9 @@ async def transcribe_audio_file(
     try:
         audio_bytes = await audio.read()
         transcription = await transcribe_audio(
-            audio_bytes, content_type=audio.content_type or '', session_id=session_id
+            audio_bytes,
+            content_type=audio.content_type or '',
+            session_id=session_registry.resolve(session_id),
         )
         return TranscriptionResponse(output=transcription)
 
