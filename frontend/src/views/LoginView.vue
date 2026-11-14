@@ -285,6 +285,7 @@ async function confirmImport() {
 
     store.setCurrentPlayer(leader)
     store.setCampaignSession(selectedCampaign.value, selectedSession.value)
+    await store.refreshActiveSession()
     store.setLocalNetworkIP(lastValidIP)
 
     await router.push({ name: 'home' })

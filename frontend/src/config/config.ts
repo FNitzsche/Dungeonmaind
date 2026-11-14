@@ -33,6 +33,8 @@ export const SERVER_CONFIG = {
     TIMELINE_EVENTS: '/timeline/events',
     TIMELINE_GENERATE: '/timeline/generate',
     MAP: '/map',
+    SESSION_CURRENT: '/session/current',
+    SESSION_NEW: '/session/new',
   },
 }
 

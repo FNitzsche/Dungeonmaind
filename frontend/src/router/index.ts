@@ -89,6 +89,9 @@ router.beforeEach(async (to) => {
     } catch (err) {
       console.error('Fehler beim Prüfen des Players:', err)
     }
+
+    // Every device follows the session the backend is running.
+    await store.refreshActiveSession()
   }
 
   if (to.meta.requiresAuth && !store.currentPlayer) {

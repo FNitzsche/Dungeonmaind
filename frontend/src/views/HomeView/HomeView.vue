@@ -115,6 +115,9 @@ onMounted(() => {
     } else if (msg.type === 'health/update' && msg.hp) {
       // backend now sends nested hp directly
       store.patchPlayer(msg.player_id, { hp: msg.hp })
+    } else if (msg.type === 'session_changed' || msg.type === 'session_imported') {
+      // The table moved to another session (new game or loaded save): follow it.
+      void store.refreshActiveSession()
     }
   }
 

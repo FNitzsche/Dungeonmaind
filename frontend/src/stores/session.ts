@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { PlayerOut, Role, Hp, AbilityScores } from '@/api/playersAPI'
 import * as api from '@/api/playersAPI'
+import * as sessionApi from '@/api/sessionAPI'
 import { buildSessionId } from '@/utils/sessionId'
 
 /**
@@ -21,8 +22,19 @@ export const useSessionStore = defineStore('session', () => {
   const campaignName = ref<string | null>(hydrateCampaignName())
   /** Saved session name for timeline/map persistence, or null if unsaved. */
   const sessionName = ref<string | null>(hydrateSessionName())
-  /** Campaign/session key, or `unsaved` until the session is named. */
-  const sessionId = computed(() => buildSessionId(campaignName.value, sessionName.value))
+  /**
+   * Key of the session the backend is running, as reported by the backend.
+   * Null until it has been fetched (or when talking to an older backend).
+   */
+  const activeSessionId = ref<string | null>(hydrateActiveSessionId())
+  /**
+   * Key sent with every timeline, map, transcription and question request.
+   * The backend gives every new game its own key, so this never points at a
+   * bucket shared with another game.
+   */
+  const sessionId = computed(
+    () => activeSessionId.value ?? buildSessionId(campaignName.value, sessionName.value),
+  )
 
   /** Whether the current player has the `leader` role. */
   const isLeader = computed(() => currentPlayer.value?.role === 'leader')
@@ -182,6 +194,24 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
+  function hydrateActiveSessionId(): string | null {
+    try {
+      return sessionStorage.getItem('activeSessionId')
+    } catch {
+      return null
+    }
+  }
+
+  function setActiveSessionId(id: string | null) {
+    activeSessionId.value = id
+    try {
+      if (id) sessionStorage.setItem('activeSessionId', id)
+      else sessionStorage.removeItem('activeSessionId')
+    } catch {
+      // ignore
+    }
+  }
+
   function persistCampaignSession(campaign: string | null, session: string | null) {
     try {
       if (campaign) sessionStorage.setItem('campaignName', campaign)
@@ -202,6 +232,26 @@ export const useSessionStore = defineStore('session', () => {
     campaignName.value = nextCampaign
     sessionName.value = nextSession
     persistCampaignSession(nextCampaign, nextSession)
+    // A saved session is addressed by its campaign/session key on the backend too.
+    setActiveSessionId(nextCampaign && nextSession ? `${nextCampaign}/${nextSession}` : null)
+  }
+
+  /**
+   * Ask the backend which session is active and adopt its key.
+   * Keeps the current key when the backend cannot be reached.
+   * @returns The session key in use after the refresh.
+   */
+  async function refreshActiveSession(): Promise<string> {
+    try {
+      const info = await sessionApi.getCurrentSession()
+      campaignName.value = info.campaign_name
+      sessionName.value = info.session_name
+      persistCampaignSession(info.campaign_name, info.session_name)
+      setActiveSessionId(info.session_id)
+    } catch (err) {
+      console.warn('Could not read the active session from the backend:', err)
+    }
+    return sessionId.value
   }
 
   /**
@@ -241,6 +291,8 @@ export const useSessionStore = defineStore('session', () => {
     const p = await api.join(name, role, reuse_id)
     currentPlayer.value = p
     persistPlayer(p)
+    // A new leader opens a new game on the backend; pick up its session key.
+    await refreshActiveSession()
     return p
   }
 
@@ -308,6 +360,7 @@ export const useSessionStore = defineStore('session', () => {
     sessionName.value = null
     clearPersist()
     persistCampaignSession(null, null)
+    setActiveSessionId(null)
   }
 
   /**
@@ -369,11 +422,13 @@ export const useSessionStore = defineStore('session', () => {
     localNetworkIP,
     campaignName,
     sessionName,
+    activeSessionId,
     sessionId,
     // getters
     isLeader,
     // actions
     setCampaignSession,
+    refreshActiveSession,
     join,
     loadPlayers,
     leave,

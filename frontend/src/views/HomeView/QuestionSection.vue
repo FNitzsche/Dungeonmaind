@@ -61,6 +61,8 @@ async function handleQuestionSubmit() {
           player_id: store.currentPlayer?.id,
           input_string: userInput.value,
           use_rulebook: askRulebook.value,
+          // Answers may only draw on this session's transcript
+          session_id: store.sessionId,
         }),
       })
       if (!response.ok || !response.body)

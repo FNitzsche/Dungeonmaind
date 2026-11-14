@@ -23,17 +23,37 @@ and a backend restart.
   - `rename_session` moves a session's data from the `unsaved` key to `campaign/session`
     when it is saved, so the timeline and map no longer look empty after saving
 
-- **Tests**
-  - `backend/tests/test_session_files.py`: export/import round trip, all-or-nothing save,
-    older saves, malformed files, re-keying
-  - `frontend/src/utils/__tests__/sessionId.spec.ts` and
-    `frontend/src/stores/__tests__/session.spec.ts`: session key handling
+- **Backend tests** (`backend/tests/`, run with `python -m pytest tests/ -v`)
+  - `test_session_files.py`: session files round trip, all-or-nothing save, older saves,
+    malformed files, re-keying
+  - `test_export_import_router.py`: export, import and campaign listing over HTTP
+  - `test_timeline_router.py`, `test_process_audio_router.py`: timeline and audio upload
+    endpoints over HTTP
+  - `test_recording_to_saved_session.py`: end-to-end flow from audio upload to timeline, map,
+    save, restart and load, with the speech models and the LLM replaced by fakes
+  - `test_event_extraction_llm.py`: event extraction with a faked Ollama reply
+  - `test_session_stores.py`: timeline, transcript and map stores
+  - `test_known_bugs.py`: expected-failure tests for open bugs B1, B3 and B9 of the roadmap
+
+- **Frontend tests**
+  - Unit tests (Vitest, `npm run test:unit -- --run`) for the session key, the map and timeline
+    API clients, the map, timeline and session stores, and `mapFromTimeline`
+  - Browser test (Playwright, `npm run test:e2e`) for the timeline and map journey against a
+    mocked backend: `frontend/e2e/timeline-map.spec.ts`
+
+### Added (API)
+
+- `GET /session/current`: key and save state of the session the backend is running. Clients
+  send this key with every timeline, map, transcription and question request
+- `POST /session/new`: start a new, empty session; the previous one keeps its data
+- `POST /llm/run` accepts an optional `session_id`; answers only use that session's transcript
+- Saved session files carry a `session_uid`
 
 ### Changed
 
 - `POST /exportImport/export`
   - Accepts an optional `source_session_id` (the key the transcript, timeline and map are
-    currently stored under; defaults to `unsaved`)
+    currently stored under; defaults to the active session)
   - The save is all-or-nothing: everything is written to a hidden staging folder and moved
     into place only when every part succeeded. A failed save leaves an older save untouched
     and returns an error
@@ -44,6 +64,28 @@ and a backend restart.
 - `.github/workflows/ci.yml` runs the frontend unit tests (Vitest) again
 - Formatting only: `process_audio_data.py`, `timeline_store.py` and `transcribe_audio.py`
   now pass `ruff format --check`
+
+### Fixed
+
+- **Sessions no longer share data.** A new game showed the transcript, timeline and map of
+  earlier games, for two reasons that are both fixed:
+  - Every unsaved game used the same session key (`unsaved`), so their events, map and
+    transcript were appended to one shared in-memory bucket. The backend now owns one active
+    session with a unique key (`draft-<random>` until saved, `campaign/session` afterwards).
+    A new key is created when the backend starts, when a new leader joins and when a saved
+    session is loaded. The legacy key `unsaved` now means "the active session"
+  - Transcript chunks in ChromaDB carried no session (`session_id: 'none'`), so "Generate
+    Events" and the question box read the recordings of every game. Chunks are now tagged with
+    a permanent session uid, and `POST /timeline/generate`, `embedding_search` and
+    `get_all_transcription_documents` are restricted to one session
+  - No stored data is deleted. Untagged chunks from older versions stay in the database and
+    are simply never matched. When a session saved by an older version is loaded, the untagged
+    chunks in its own database copy are assigned to it
+- The frontend takes its session key from the backend (`GET /session/current`) instead of
+  computing `unsaved`, and the timeline and map stores drop their data as soon as the session
+  changes, so a previous session is never shown
+- `TimelineEvent.timestamp` defaulted to an empty string, which made `GET /timeline/events`
+  fail with a server error for any event created without a timestamp. It now defaults to `0.0`
 
 ### Technical Notes
 

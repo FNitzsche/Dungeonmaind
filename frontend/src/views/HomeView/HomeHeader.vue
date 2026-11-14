@@ -203,6 +203,7 @@ async function onExport() {
       throw new Error(`Save failed (${res.status})`)
     }
     store.setCampaignSession(campaign, name)
+    await store.refreshActiveSession()
   } catch (err) {
     console.error(err)
     if (err instanceof Error) {
@@ -258,6 +259,7 @@ async function confirmOverwrite() {
 
       savingSuccessful = true
       if (campaign && name) store.setCampaignSession(campaign, name)
+      await store.refreshActiveSession()
     } catch (err) {
       console.error(err)
       if (err instanceof Error) {
