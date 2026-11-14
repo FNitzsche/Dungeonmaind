@@ -6,6 +6,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMapStore } from '@/stores/map'
+import { useSessionStore } from '@/stores/session'
 import { useTimelineStore } from '@/stores/timeline'
 import type { MapEdge, MapEdgeType } from '@/api/mapAPI'
 
@@ -13,6 +14,7 @@ const router = useRouter()
 const route = useRoute()
 const mapStore = useMapStore()
 const timelineStore = useTimelineStore()
+const sessionStore = useSessionStore()
 
 const svgRef = ref<SVGSVGElement | null>(null)
 const selectedEdgeKey = ref<string | null>(null)
@@ -309,8 +311,10 @@ async function handleGenerateMap() {
 }
 
 async function loadMap() {
+  // Reload the timeline when it is empty or still holds another session's events.
   const timelineReady =
-    timelineStore.events.length === 0 && !timelineStore.loading
+    timelineStore.sessionId !== sessionStore.sessionId ||
+    (timelineStore.events.length === 0 && !timelineStore.loading)
       ? timelineStore.fetchEvents()
       : Promise.resolve()
 
@@ -332,6 +336,15 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
 })
+
+// The active session changed (new game, saved, loaded): show that session only.
+watch(
+  () => sessionStore.sessionId,
+  () => {
+    selectedEdgeKey.value = null
+    void loadMap()
+  },
+)
 
 watch(
   () => route.query.place,

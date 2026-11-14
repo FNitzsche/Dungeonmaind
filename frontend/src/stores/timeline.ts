@@ -17,6 +17,8 @@ export const useTimelineStore = defineStore('timeline', () => {
   const generating = ref(false)
   /** Last error message, if any. */
   const error = ref<string | null>(null)
+  /** Session the cached events belong to, or null when nothing was loaded yet. */
+  const sessionId = ref<string | null>(null)
 
   /** Total number of events currently in the store. */
   const eventCount = computed(() => events.value.length)
@@ -43,22 +45,44 @@ export const useTimelineStore = defineStore('timeline', () => {
     return grouped
   })
 
-  function resolveSessionId(sessionId?: string) {
-    return sessionId ?? useSessionStore().sessionId
+  function resolveSessionId(forSessionId?: string) {
+    return forSessionId ?? useSessionStore().sessionId
+  }
+
+  /**
+   * Point the store at a session. Events of any other session are dropped
+   * immediately, so a previous session's timeline is never shown.
+   */
+  function switchSession(id: string) {
+    if (sessionId.value === id) return
+    sessionId.value = id
+    events.value = []
+    error.value = null
+  }
+
+  /** Forget everything that was loaded. */
+  function reset() {
+    sessionId.value = null
+    events.value = []
+    error.value = null
   }
 
   /**
    * Fetch timeline events for the active campaign/session.
    * @param sessionId - Optional override. Defaults to the session store key.
    */
-  async function fetchEvents(sessionId?: string) {
-    const id = resolveSessionId(sessionId)
+  async function fetchEvents(forSessionId?: string) {
+    const id = resolveSessionId(forSessionId)
+    switchSession(id)
     loading.value = true
     error.value = null
     try {
       const response = await api.listEvents(id)
+      // Ignore an answer that arrives after the user switched to another session.
+      if (sessionId.value !== id) return
       events.value = response?.events ?? []
     } catch (err) {
+      if (sessionId.value !== id) return
       error.value = err instanceof Error ? err.message : 'Failed to load events'
       events.value = []
     } finally {
@@ -71,14 +95,15 @@ export const useTimelineStore = defineStore('timeline', () => {
    * @param sessionId - Optional override. Defaults to the session store key.
    * @returns The generate response or null on failure.
    */
-  async function generateEvents(sessionId?: string) {
-    const id = resolveSessionId(sessionId)
+  async function generateEvents(forSessionId?: string) {
+    const id = resolveSessionId(forSessionId)
     if (generating.value) return
+    switchSession(id)
     generating.value = true
     error.value = null
     try {
       const response = await api.generateEvents(id)
-      events.value = response?.events ?? []
+      if (sessionId.value === id) events.value = response?.events ?? []
       return response
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Failed to generate events'
@@ -105,8 +130,9 @@ export const useTimelineStore = defineStore('timeline', () => {
    * Clear all events for a session on the backend and in the local store.
    * @param sessionId - Optional override. Defaults to the session store key.
    */
-  async function clearEvents(sessionId?: string) {
-    const id = resolveSessionId(sessionId)
+  async function clearEvents(forSessionId?: string) {
+    const id = resolveSessionId(forSessionId)
+    switchSession(id)
     try {
       await api.clearSessionEvents(id)
       events.value = []
@@ -120,11 +146,13 @@ export const useTimelineStore = defineStore('timeline', () => {
     loading,
     generating,
     error,
+    sessionId,
     eventCount,
     eventsByType,
     fetchEvents,
     generateEvents,
     removeEvent,
     clearEvents,
+    reset,
   }
 })

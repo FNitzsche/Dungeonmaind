@@ -42,16 +42,29 @@ export const useMapStore = defineStore('map', () => {
     const id = resolveSessionId(forSessionId)
     loading.value = true
     error.value = null
+    if (sessionId.value !== id) {
+      // Another session: never keep showing the previous session's places.
+      nodes.value = []
+      edges.value = []
+      clearSelection()
+    }
     sessionId.value = id
 
     try {
       const response = await mapApi.getMap(id)
+      // Ignore an answer that arrives after the user switched to another session.
+      if (sessionId.value !== id) return
       nodes.value = response.nodes ?? []
       edges.value = response.edges ?? []
       dataSource.value = 'api'
     } catch (apiError) {
+      if (sessionId.value !== id) return
       const timelineStore = useTimelineStore()
-      if (timelineStore.events.length === 0 && !timelineStore.loading) {
+      const timelineIsForOtherSession = timelineStore.sessionId !== id
+      if (
+        timelineIsForOtherSession ||
+        (timelineStore.events.length === 0 && !timelineStore.loading)
+      ) {
         await timelineStore.fetchEvents(id)
       }
 

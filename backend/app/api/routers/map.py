@@ -24,6 +24,7 @@ from app.domain.map_edge import MapEdge
 from app.domain.map_location import MapLocation
 from app.domain.map_store import map_store
 from app.domain.models import TimelineEvent
+from app.domain.session_state import session_registry
 from app.domain.timeline_store import timeline_store
 from app.functions.geo.build_map import generate_map
 from app.functions.geo.link_builder import build_edges
@@ -54,6 +55,7 @@ async def _session_edges(session_id: str) -> tuple[list[MapLocation], list[MapEd
     Prefers the edges saved by /map/generate; falls back to inferring them
     live from the resolved locations if nothing has been generated yet.
     """
+    session_id = session_registry.resolve(session_id)
     events, locations = await _session_events_and_locations(session_id)
     stored_edges = await map_store.get_edges(session_id)
     if stored_edges is not None:
@@ -77,6 +79,7 @@ async def list_locations(
     Returns:
         MapLocationListResponse with one MapLocationOut per resolved place.
     """
+    session_id = session_registry.resolve(session_id)
     _, locations = await _session_events_and_locations(session_id)
     return MapLocationListResponse(
         session_id=session_id,
@@ -104,6 +107,7 @@ async def list_location_events(
     Raises:
         HTTPException 404: If the location is not found in the session.
     """
+    session_id = session_registry.resolve(session_id)
     events, locations = await _session_events_and_locations(session_id)
     location = next((item for item in locations if item.id == location_id), None)
     if location is None:
@@ -137,6 +141,7 @@ async def get_event_location(
     Raises:
         HTTPException 404: If no location lists this event.
     """
+    session_id = session_registry.resolve(session_id)
     _, locations = await _session_events_and_locations(session_id)
     location = next((item for item in locations if event_id in item.event_ids), None)
     if location is None:
@@ -163,6 +168,7 @@ async def list_event_locations(
     Raises:
         HTTPException 404: If no location lists this event.
     """
+    session_id = session_registry.resolve(session_id)
     _, locations = await _session_events_and_locations(session_id)
     matched = [item for item in locations if event_id in item.event_ids]
     if not matched:
@@ -190,6 +196,7 @@ async def list_edges(
     Returns:
         MapEdgeListResponse with one MapEdgeOut per inferred link.
     """
+    session_id = session_registry.resolve(session_id)
     _, edges = await _session_edges(session_id)
     return MapEdgeListResponse(
         session_id=session_id, edges=[map_edge_to_out(edge) for edge in edges], total=len(edges)
@@ -216,6 +223,7 @@ async def list_location_edges(
     Raises:
         HTTPException 404: If the location is not found in the session.
     """
+    session_id = session_registry.resolve(session_id)
     locations, edges = await _session_edges(session_id)
     if not any(item.id == location_id for item in locations):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Location not found')
@@ -246,9 +254,10 @@ async def generate_session_map(req: MapGenerateRequest) -> MapGenerateResponse:
         MapGenerateResponse with the counts and full contents of the
         generated graph.
     """
-    locations, edges = await generate_map(req.session_id)
+    session_id = session_registry.resolve(req.session_id)
+    locations, edges = await generate_map(session_id)
     return MapGenerateResponse(
-        session_id=req.session_id,
+        session_id=session_id,
         locations_generated=len(locations),
         edges_generated=len(edges),
         locations=[map_location_to_out(location) for location in locations],
@@ -272,6 +281,7 @@ async def get_map(
     Returns:
         MapGraphResponse with the session's locations and edges.
     """
+    session_id = session_registry.resolve(session_id)
     locations, edges = await _session_edges(session_id)
     return MapGraphResponse(
         session_id=session_id,
@@ -292,5 +302,6 @@ async def delete_map(
     Returns:
         MapDeleteResponse indicating whether a saved map was removed.
     """
+    session_id = session_registry.resolve(session_id)
     deleted = await map_store.clear_session(session_id)
     return MapDeleteResponse(deleted=deleted, session_id=session_id)

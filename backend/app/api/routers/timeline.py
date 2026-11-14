@@ -10,6 +10,7 @@ from app.base_models.timeline_base_models import (
     TimelineGenerateRequest,
     TimelineGenerateResponse,
 )
+from app.domain.session_state import session_registry
 from app.domain.timeline_store import timeline_store
 from app.functions.embedding.embedding_model import get_all_transcription_documents
 from app.functions.llm.event_extractor import (
@@ -32,6 +33,7 @@ async def list_events(
     Returns:
         TimelineEventListResponse: TimelineEventListResponse with events and total count.
     """
+    session_id = session_registry.resolve(session_id)
     events = await timeline_store.get_session_events(session_id)
     return TimelineEventListResponse(
         session_id=session_id, events=[timeline_event_to_out(e) for e in events], total=len(events)
@@ -83,13 +85,16 @@ async def clear_session_events(
     Returns:
         TimelineDeleteResponse: TimelineDeleteResponse indicating success.
     """
-    await timeline_store.clear_session(session_id)
+    await timeline_store.clear_session(session_registry.resolve(session_id))
     return TimelineDeleteResponse(deleted=True, event_id=None)
 
 
 @router.post('/generate', response_model=TimelineGenerateResponse)
 async def generate_events(req: TimelineGenerateRequest) -> TimelineGenerateResponse:
-    """Generate timeline events from all available transcription documents.
+    """Generate timeline events from the transcriptions of one session.
+
+    Only transcription documents recorded in the requested session are used;
+    recordings of other sessions and campaigns never contribute.
 
     Args:
         req (TimelineGenerateRequest): TimelineGenerateRequest with session_id.
@@ -100,27 +105,29 @@ async def generate_events(req: TimelineGenerateRequest) -> TimelineGenerateRespo
     Raises:
         HTTPException 404: If no transcription documents are found.
     """
-    docs = get_all_transcription_documents()
+    session_id = session_registry.resolve(req.session_id)
+    docs = get_all_transcription_documents(session_id=session_id)
     if not docs:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,
-            detail='No transcription documents found. Record and transcribe audio first.',
+            detail='No transcription documents found for this session. '
+            'Record and transcribe audio first.',
         )
 
     texts = [doc.page_content for doc in docs]
     speakers = [doc.metadata.get('player_id', 'unknown') for doc in docs]
     timestamps = [float(doc.metadata.get('start_time', 0.0)) for doc in docs]
     events = extract_events_from_transcriptions(
-        texts=texts, speakers=speakers, timestamps=timestamps, session_id=req.session_id
+        texts=texts, speakers=speakers, timestamps=timestamps, session_id=session_id
     )
     if not events:
-        events = build_timeline_events_from_transcription_documents(docs, session_id=req.session_id)
+        events = build_timeline_events_from_transcription_documents(docs, session_id=session_id)
 
-    await timeline_store.clear_session(req.session_id)
+    await timeline_store.clear_session(session_id)
     added = await timeline_store.add_events(events)
 
     return TimelineGenerateResponse(
-        session_id=req.session_id,
+        session_id=session_id,
         events_generated=len(added),
         events=[timeline_event_to_out(e) for e in added],
     )

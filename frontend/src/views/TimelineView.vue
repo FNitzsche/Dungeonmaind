@@ -156,6 +156,15 @@ onMounted(async () => {
   await openEventFromQuery()
 })
 
+// The active session changed (new game, saved, loaded): show that session only.
+watch(
+  () => sessionStore.sessionId,
+  async () => {
+    closeDetail()
+    await timelineStore.fetchEvents()
+  },
+)
+
 watch(
   () => route.query.event,
   async () => {
