@@ -336,7 +336,7 @@ class TimelineEvent:
         description: Detailed description of the event.
         event_type: Categorization of the event (combat, discovery, etc.).
         order: Ordinal position within the session.
-        timestamp: Float timestamp of when the event occurred.
+        timestamp: Seconds into the recording when the event occurred (0.0 if unknown).
         transcription_chunk_id: ID of the transcription chunk this event was extracted from.
         player_id: ID of the player associated with the event.
         speaker_name: Name of the speaker associated with the event.
@@ -352,7 +352,7 @@ class TimelineEvent:
     description: str
     event_type: TimelineEventType = field(default_factory=lambda: TimelineEventType.other)
     order: int = 0
-    timestamp: str = ''
+    timestamp: float = 0.0
     transcription_chunk_id: str | None = None
     player_id: str | None = None
     speaker_name: str | None = None
@@ -403,7 +403,7 @@ class TimelineEvent:
             description=data['description'],
             event_type=TimelineEventType(data.get('event_type', 'other')),
             order=data.get('order', 0),
-            timestamp=data.get('timestamp', ''),
+            timestamp=float(data.get('timestamp') or 0.0),
             transcription_chunk_id=data.get('transcription_chunk_id'),
             player_id=data.get('player_id'),
             speaker_name=data.get('speaker_name'),
