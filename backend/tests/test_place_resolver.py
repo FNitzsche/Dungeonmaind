@@ -245,6 +245,118 @@ class MapLocationResolverTests(unittest.TestCase):
             resolve_map_locations(events)[0].event_ids, resolve_locations(events)[0].event_ids
         )
 
+    def test_session_b_reuses_stable_ids_and_allocates_the_next_place(self) -> None:
+        session_a = [
+            _event('evt_1', ['Velmora Crossing'], order=1, session_id='session_a'),
+            _event('evt_2', ['Silver Lake'], order=2, session_id='session_a'),
+            _event('evt_3', ['Ye Olde Tavern'], order=3, session_id='session_a'),
+            _event('evt_4', ['the tavern'], order=4, session_id='session_a'),
+        ]
+        existing = resolve_locations(session_a, existing=[])
+        before = [
+            (location.id, list(location.event_ids), location.mention_count, location.first_order)
+            for location in existing
+        ]
+        session_b = [
+            _event('evt_5', ['the tavern', 'Old Watchtower'], order=5, session_id='session_b'),
+            _event('evt_6', ['Silver Lake', 'Old Watchtower'], order=6, session_id='session_b'),
+        ]
+
+        locations = resolve_locations(session_b, existing=existing)
+        by_id = {location.id: location for location in locations}
+
+        self.assertEqual(
+            before,
+            [
+                (
+                    location.id,
+                    list(location.event_ids),
+                    location.mention_count,
+                    location.first_order,
+                )
+                for location in existing
+            ],
+        )
+        self.assertEqual(list(by_id), ['loc_1', 'loc_2', 'loc_3', 'loc_4'])
+        self.assertEqual(
+            [location.canonical_name for location in locations],
+            ['Velmora Crossing', 'Silver Lake', 'Ye Olde Tavern', 'Old Watchtower'],
+        )
+
+        self.assertEqual(by_id['loc_1'].event_ids, ['evt_1'])
+        self.assertEqual(by_id['loc_1'].mention_count, 1)
+        self.assertEqual(by_id['loc_1'].first_order, 0)
+        self.assertEqual(by_id['loc_1'].session_id, 'session_a')
+
+        self.assertEqual(by_id['loc_2'].canonical_name, 'Silver Lake')
+        self.assertEqual(by_id['loc_2'].event_ids, ['evt_2', 'evt_6'])
+        self.assertEqual(by_id['loc_2'].mention_count, 2)
+        self.assertEqual(by_id['loc_2'].first_order, 1)
+
+        self.assertEqual(by_id['loc_3'].canonical_name, 'Ye Olde Tavern')
+        self.assertEqual(by_id['loc_3'].aliases, ['the tavern'])
+        self.assertEqual(by_id['loc_3'].event_ids, ['evt_3', 'evt_4', 'evt_5'])
+        self.assertEqual(by_id['loc_3'].mention_count, 3)
+        self.assertEqual(by_id['loc_3'].first_order, 2)
+        self.assertEqual(by_id['loc_3'].session_id, 'session_a')
+
+        self.assertEqual(by_id['loc_4'].canonical_name, 'Old Watchtower')
+        self.assertEqual(by_id['loc_4'].aliases, [])
+        self.assertEqual(by_id['loc_4'].event_ids, ['evt_5', 'evt_6'])
+        self.assertEqual(by_id['loc_4'].mention_count, 2)
+        self.assertEqual(by_id['loc_4'].first_order, 3)
+        self.assertEqual(by_id['loc_4'].session_id, 'session_b')
+
+    def test_case_and_whitespace_reuse_an_existing_place_id(self) -> None:
+        existing = resolve_locations([_event('evt_2', ['Silver Lake'], order=2)])
+
+        locations = resolve_locations(
+            [_event('evt_6', ['  silver   lake '], order=6, session_id='session_b')],
+            existing=existing,
+        )
+
+        self.assertEqual(len(locations), 1)
+        self.assertEqual(locations[0].id, 'loc_1')
+        self.assertEqual(locations[0].canonical_name, 'Silver Lake')
+        self.assertEqual(locations[0].event_ids, ['evt_2', 'evt_6'])
+
+    def test_new_alias_merges_into_the_existing_place(self) -> None:
+        existing = resolve_locations([_event('evt_5', ['Old Watchtower'], order=5)])
+
+        locations = resolve_locations(
+            [_event('evt_6', ['the watchtower'], order=6)], existing=existing
+        )
+
+        self.assertEqual(len(locations), 1)
+        self.assertEqual(locations[0].id, 'loc_1')
+        self.assertEqual(locations[0].canonical_name, 'Old Watchtower')
+        self.assertEqual(locations[0].aliases, ['the watchtower'])
+        self.assertEqual(locations[0].event_ids, ['evt_5', 'evt_6'])
+
+    def test_ambiguous_short_name_still_allocates_a_new_id(self) -> None:
+        existing = resolve_locations(
+            [_event('evt_1', ['Silver Lake'], order=1), _event('evt_2', ['Black Lake'], order=2)]
+        )
+
+        locations = resolve_locations([_event('evt_3', ['the lake'], order=3)], existing=existing)
+
+        self.assertEqual(
+            [location.canonical_name for location in locations],
+            ['Silver Lake', 'Black Lake', 'the lake'],
+        )
+        self.assertEqual(locations[2].id, 'loc_3')
+        self.assertEqual(locations[2].event_ids, ['evt_3'])
+
+    def test_same_event_is_not_stored_twice_when_it_repeats_a_place(self) -> None:
+        existing = resolve_locations([_event('evt_3', ['Ye Olde Tavern'], order=3)])
+
+        locations = resolve_locations(
+            [_event('evt_5', ['Ye Olde Tavern', 'the tavern'], order=5)], existing=existing
+        )
+
+        self.assertEqual(locations[0].event_ids, ['evt_3', 'evt_5'])
+        self.assertEqual(locations[0].mention_count, 3)
+
 
 if __name__ == '__main__':
     unittest.main()

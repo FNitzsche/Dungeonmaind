@@ -6,16 +6,20 @@ from httpx import ASGITransport, AsyncClient
 from app.api.routers.map import router as map_router
 from app.base_models.map_base_models import MapLocationListResponse, MapLocationOut
 from app.base_models.timeline_base_models import TimelineEventListResponse, TimelineEventOut
+from app.domain.map_store import map_store
 from app.domain.models import TimelineEvent
 from app.domain.timeline_store import timeline_store
+from app.functions.geo.place_resolver import resolve_locations
 
 SESSION_ID = 'sess-1'
 
 
-def _event(event_id: str, places: list[str], order: int) -> TimelineEvent:
+def _event(
+    event_id: str, places: list[str], order: int, session_id: str = SESSION_ID
+) -> TimelineEvent:
     return TimelineEvent(
         id=event_id,
-        session_id=SESSION_ID,
+        session_id=session_id,
         title=event_id,
         description='',
         order=order,
@@ -46,6 +50,8 @@ class MapLocationsRouterTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self) -> None:
         await self.client.aclose()
         await timeline_store.clear_all()
+        await map_store.clear_session(SESSION_ID)
+        await map_store.clear_session('session_b')
 
     async def test_get_map_locations_matches_worked_example_contract(self) -> None:
         response = await self.client.get('/map/locations', params={'session_id': SESSION_ID})
@@ -140,6 +146,49 @@ class MapLocationsRouterTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 404)
         self.assertEqual(response.json()['detail'], 'Location not found')
+
+    async def test_campaign_graph_reuses_place_ids_for_a_later_session(self) -> None:
+        session_a = [
+            _event('evt_1', ['Velmora Crossing'], order=1, session_id='session_a'),
+            _event('evt_2', ['Silver Lake'], order=2, session_id='session_a'),
+            _event('evt_3', ['Ye Olde Tavern'], order=3, session_id='session_a'),
+            _event('evt_4', ['the tavern'], order=4, session_id='session_a'),
+        ]
+        session_b = [
+            _event('evt_5', ['the tavern', 'Old Watchtower'], order=5, session_id='session_b'),
+            _event('evt_6', ['Silver Lake', 'Old Watchtower'], order=6, session_id='session_b'),
+        ]
+        await timeline_store.add_events([*session_a, *session_b])
+        campaign = resolve_locations(session_b, existing=resolve_locations(session_a))
+        await map_store.save_map('session_b', campaign, [])
+
+        locations_response = await self.client.get(
+            '/map/locations', params={'session_id': 'session_b'}
+        )
+        self.assertEqual(locations_response.status_code, 200)
+        places = MapLocationListResponse.model_validate(locations_response.json())
+        self.assertEqual(
+            [location.id for location in places.locations], ['loc_1', 'loc_2', 'loc_3', 'loc_4']
+        )
+        tavern = places.locations[2]
+        self.assertEqual(tavern.canonical_name, 'Ye Olde Tavern')
+        self.assertEqual(tavern.aliases, ['the tavern'])
+        self.assertEqual(tavern.event_ids, ['evt_3', 'evt_4', 'evt_5'])
+
+        events_response = await self.client.get(
+            '/map/locations/loc_3/events', params={'session_id': 'session_b'}
+        )
+        self.assertEqual(events_response.status_code, 200)
+        linked = TimelineEventListResponse.model_validate(events_response.json())
+        self.assertEqual([event.id for event in linked.events], ['evt_3', 'evt_4', 'evt_5'])
+        self.assertEqual(linked.events[2].location_entities, ['the tavern', 'Old Watchtower'])
+
+        reverse_response = await self.client.get(
+            '/map/events/evt_6/locations', params={'session_id': 'session_b'}
+        )
+        self.assertEqual(reverse_response.status_code, 200)
+        reverse = MapLocationListResponse.model_validate(reverse_response.json())
+        self.assertEqual([location.id for location in reverse.locations], ['loc_2', 'loc_4'])
 
     async def test_get_map_locations_returns_empty_list_for_unknown_session(self) -> None:
         response = await self.client.get('/map/locations', params={'session_id': 'missing'})

@@ -9,7 +9,9 @@ unmerged (safe degradation).
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Any
 
 from app.domain.map_location import MapLocation
@@ -234,7 +236,9 @@ def resolve_location_entities(location_entities: list[str]) -> list[str]:
     return [_pick_canonical(cluster) for cluster in clusters]
 
 
-def resolve_locations(events: Sequence[Any], session_id: str | None = None) -> list[MapLocation]:
+def _resolve_session_locations(
+    events: Sequence[Any], session_id: str | None = None
+) -> list[MapLocation]:
     """Resolve an ordered session timeline into one MapLocation per place.
 
     Wires together place-name normalization, exact-match dedupe, and
@@ -310,6 +314,176 @@ def resolve_locations(events: Sequence[Any], session_id: str | None = None) -> l
     return locations
 
 
-def resolve_map_locations(events: list[Any], session_id: str | None = None) -> list[MapLocation]:
+_LOCATION_ID = re.compile(r'^loc_(\d+)$')
+
+
+def _copy_location(location: MapLocation) -> MapLocation:
+    """Return a shallow copy so campaign updates do not mutate saved places."""
+    return replace(location, aliases=list(location.aliases), event_ids=list(location.event_ids))
+
+
+def _next_location_id(locations: Sequence[MapLocation]) -> str:
+    """Allocate the next loc_N id after the highest one already in use."""
+    highest = 0
+    for location in locations:
+        match = _LOCATION_ID.match(location.id)
+        if match:
+            highest = max(highest, int(match.group(1)))
+    return f'loc_{highest + 1}'
+
+
+def _known_names(location: MapLocation) -> list[str]:
+    return [location.canonical_name, *location.aliases]
+
+
+def _has_name(location: MapLocation, name: str) -> bool:
+    key = normalize_place_name(name).casefold()
+    return any(normalize_place_name(known).casefold() == key for known in _known_names(location))
+
+
+def _exact_location(name: str, locations: Sequence[MapLocation]) -> MapLocation | None:
+    """Match a normalized name to a canonical name or alias, ignoring case."""
+    for location in locations:
+        if _has_name(location, name):
+            return location
+    return None
+
+
+def _alias_location(name: str, locations: Sequence[MapLocation]) -> MapLocation | None:
+    """Apply the Part 1 near-match rule against places already in the campaign.
+
+    A short name collapses into a longer one only when exactly one place
+    matches. An ambiguous short name is left unmatched so the caller can
+    allocate a separate place.
+    """
+    candidates = [
+        location
+        for location in locations
+        if any(_is_near_duplicate(name, known) for known in _known_names(location))
+    ]
+    if len(candidates) == 1:
+        return candidates[0]
+    return None
+
+
+def _remember_name(location: MapLocation, name: str) -> None:
+    """Record a new spelling on a place, promoting a more specific canonical name."""
+    if _has_name(location, name):
+        return
+    if _is_more_specific(name, location.canonical_name):
+        previous = location.canonical_name
+        location.canonical_name = name
+        if not _has_name(location, previous):
+            location.aliases.append(previous)
+        return
+    location.aliases.append(name)
+
+
+def _credit_event(location: MapLocation, event_id: str, seen_at: int, credited: set[str]) -> None:
+    """Count one mention and append the event id the first time it is seen."""
+    location.mention_count += 1
+    if location.mention_count == 1:
+        location.first_order = seen_at
+    if event_id and location.id not in credited and event_id not in location.event_ids:
+        credited.add(location.id)
+        location.event_ids.append(event_id)
+
+
+def _allocate_location(
+    locations: list[MapLocation],
+    name: str,
+    session_id: str,
+    event_id: str,
+    seen_at: int,
+    credited: set[str],
+) -> MapLocation:
+    location = MapLocation(
+        id=_next_location_id(locations),
+        session_id=session_id,
+        canonical_name=name,
+        aliases=[],
+        event_ids=[],
+        mention_count=0,
+        first_order=seen_at,
+    )
+    locations.append(location)
+    _credit_event(location, event_id, seen_at, credited)
+    return location
+
+
+def _extend_locations(
+    events: Sequence[Any], existing: Sequence[MapLocation], session_id: str | None
+) -> list[MapLocation]:
+    """Reuse campaign place ids, then allocate ids only for genuinely new names."""
+    ordered = sorted(events, key=lambda event: int(getattr(event, 'order', 0) or 0))
+    locations = [_copy_location(location) for location in existing]
+
+    resolved_session = session_id
+    if resolved_session is None:
+        for event in ordered:
+            event_session = getattr(event, 'session_id', None)
+            if event_session:
+                resolved_session = str(event_session)
+                break
+    resolved_session = resolved_session or 'default'
+    order_base = max((location.first_order for location in locations), default=-1) + 1
+
+    for event_index, event in enumerate(ordered):
+        event_id = str(getattr(event, 'id', '') or '')
+        credited: set[str] = set()
+        seen_at = order_base + event_index
+        for raw in getattr(event, 'location_entities', None) or []:
+            name = normalize_place_name(str(raw))
+            if not name:
+                continue
+            location = _exact_location(name, locations) or _alias_location(name, locations)
+            if location is None:
+                _allocate_location(locations, name, resolved_session, event_id, seen_at, credited)
+                continue
+            _remember_name(location, name)
+            _credit_event(location, event_id, seen_at, credited)
+
+    return locations
+
+
+def resolve_locations(
+    events: Sequence[Any],
+    existing: Sequence[MapLocation] | None = None,
+    session_id: str | None = None,
+) -> list[MapLocation]:
+    """Resolve timeline events into one MapLocation per place.
+
+    With ``existing`` omitted or empty, ids start at ``loc_1`` and
+    ``first_order`` is the index of the first mentioning event in ``events``.
+    That is the single-session resolver.
+
+    With places this campaign already has, matching is: normalize case and
+    whitespace, exact-match a canonical name or alias, then the Part 1 alias
+    merge, then allocate the next ``loc_N``. A reused place keeps its id,
+    its ``first_order``, and its ``session_id``. Its ``event_ids`` gain the
+    new event once, in first-seen order. A new place's ``first_order``
+    continues from one past the highest ``first_order`` already saved.
+    ``existing`` itself is not mutated.
+
+    Args:
+        events: Ordered timeline events for this session.
+        existing: Places already saved for the campaign. Pass ``[]`` for the
+            first session.
+        session_id: Optional session id for newly allocated places. Defaults
+            to the first event's session_id, then ``'default'``.
+
+    Returns:
+        Existing places in their original order, followed by places allocated
+        for this session. When ``existing`` is empty, one MapLocation per
+        place in first-seen order.
+    """
+    if not existing:
+        return _resolve_session_locations(events, session_id=session_id)
+    return _extend_locations(events, existing, session_id)
+
+
+def resolve_map_locations(
+    events: list[Any], existing: Sequence[MapLocation] | None = None, session_id: str | None = None
+) -> list[MapLocation]:
     """Backward-compatible alias for :func:`resolve_locations`."""
-    return resolve_locations(events, session_id=session_id)
+    return resolve_locations(events, existing=existing, session_id=session_id)
