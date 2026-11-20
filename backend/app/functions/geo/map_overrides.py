@@ -2,8 +2,8 @@
 
 ``map_overrides.json`` is the durable store for DM edits: place renames,
 merges, splits, and added or removed connections. Auto-generated maps stay
-untouched; these overrides are applied on read so corrections survive
-regeneration.
+untouched; these overrides are reapplied on regenerate and on read so
+corrections survive a from-scratch rebuild.
 """
 
 from __future__ import annotations
