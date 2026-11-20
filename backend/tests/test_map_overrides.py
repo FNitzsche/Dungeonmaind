@@ -322,6 +322,88 @@ class MapOverridesRouterTests(unittest.IsolatedAsyncioTestCase):
             [('loc_2', 'loc_3')],
         )
 
+    async def test_rename_endpoint_updates_the_place_name(self) -> None:
+        await self.client.post('/map/generate', json={'session_id': 'sess-overrides'})
+
+        response = await self.client.post(
+            '/map/overrides/rename',
+            json={
+                'session_id': 'sess-overrides',
+                'location_id': 'loc_1',
+                'canonical_name': 'The Crossing',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['locations'][0]['canonical_name'], 'The Crossing')
+        stored = load_session_overrides('sess-overrides', path=self.path)
+        self.assertEqual(stored.renames[0].canonical_name, 'The Crossing')
+
+    async def test_merge_endpoint_folds_source_into_target(self) -> None:
+        await self.client.post('/map/generate', json={'session_id': 'sess-overrides'})
+
+        response = await self.client.post(
+            '/map/overrides/merge',
+            json={
+                'session_id': 'sess-overrides',
+                'source_location_ids': ['loc_2'],
+                'target_location_id': 'loc_1',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item['id'] for item in response.json()['locations']], ['loc_1'])
+        self.assertEqual(response.json()['edges'], [])
+
+    async def test_split_endpoint_carves_out_a_new_place(self) -> None:
+        await self.client.post('/map/generate', json={'session_id': 'sess-overrides'})
+
+        response = await self.client.post(
+            '/map/overrides/split',
+            json={
+                'session_id': 'sess-overrides',
+                'source_location_id': 'loc_1',
+                'canonical_name': 'The Gate',
+                'event_ids': ['evt_1'],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        names = [item['canonical_name'] for item in response.json()['locations']]
+        self.assertIn('The Gate', names)
+        gate = next(item for item in response.json()['locations'] if item['id'] == 'loc_3')
+        self.assertEqual(gate['event_ids'], ['evt_1'])
+
+    async def test_connect_and_disconnect_endpoints_rewire_links(self) -> None:
+        await self.client.post('/map/generate', json={'session_id': 'sess-overrides'})
+
+        disconnected = await self.client.post(
+            '/map/overrides/disconnect',
+            json={
+                'session_id': 'sess-overrides',
+                'from_location_id': 'loc_1',
+                'to_location_id': 'loc_2',
+            },
+        )
+        self.assertEqual(disconnected.status_code, 200)
+        self.assertEqual(disconnected.json()['edges'], [])
+
+        connected = await self.client.post(
+            '/map/overrides/connect',
+            json={
+                'session_id': 'sess-overrides',
+                'from_location_id': 'loc_2',
+                'to_location_id': 'loc_1',
+                'relationship': 'proximity',
+            },
+        )
+        self.assertEqual(connected.status_code, 200)
+        edges = connected.json()['edges']
+        self.assertEqual(len(edges), 1)
+        self.assertEqual(edges[0]['from_location_id'], 'loc_2')
+        self.assertEqual(edges[0]['to_location_id'], 'loc_1')
+        self.assertEqual(edges[0]['relationship'], 'proximity')
+
 
 if __name__ == '__main__':
     unittest.main()

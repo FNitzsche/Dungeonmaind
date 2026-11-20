@@ -92,3 +92,38 @@ class MapDeleteResponse(BaseModel):
 
     deleted: bool
     session_id: str | None = None
+
+
+class MapRenameRequest(BaseModel):
+    """Rename a resolved place. Survives regenerate via map_overrides.json."""
+
+    session_id: str = 'default'
+    location_id: str
+    canonical_name: str
+
+
+class MapMergeRequest(BaseModel):
+    """Fold source places into a surviving target place."""
+
+    session_id: str = 'default'
+    source_location_ids: list[str]
+    target_location_id: str
+
+
+class MapSplitRequest(BaseModel):
+    """Carve a new place out of an existing one, moving selected events."""
+
+    session_id: str = 'default'
+    source_location_id: str
+    canonical_name: str
+    event_ids: list[str] = Field(default_factory=list)
+    new_location_id: str | None = None
+
+
+class MapConnectionRequest(BaseModel):
+    """Add or remove a link between two places."""
+
+    session_id: str = 'default'
+    from_location_id: str
+    to_location_id: str
+    relationship: str | None = None

@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from app.api.mappers.map_mapper import map_edge_to_out, map_location_to_out
 from app.api.mappers.timeline_mapper import timeline_event_to_out
 from app.base_models.map_base_models import (
+    MapConnectionRequest,
     MapDeleteResponse,
     MapEdgeListResponse,
     MapGenerateRequest,
@@ -18,6 +19,9 @@ from app.base_models.map_base_models import (
     MapGraphResponse,
     MapLocationListResponse,
     MapLocationOut,
+    MapMergeRequest,
+    MapRenameRequest,
+    MapSplitRequest,
 )
 from app.base_models.timeline_base_models import TimelineEventListResponse
 from app.domain.map_edge import MapEdge
@@ -28,7 +32,16 @@ from app.domain.session_state import session_registry
 from app.domain.timeline_store import timeline_store
 from app.functions.geo.build_map import generate_map
 from app.functions.geo.link_builder import build_edges
-from app.functions.geo.map_overrides import apply_map_overrides, load_session_overrides
+from app.functions.geo.map_overrides import (
+    _next_location_id,
+    apply_map_overrides,
+    load_session_overrides,
+    record_added_connection,
+    record_merge,
+    record_removed_connection,
+    record_rename,
+    record_split,
+)
 from app.functions.geo.place_resolver import resolve_locations
 
 router = APIRouter()
@@ -91,6 +104,23 @@ async def _session_edges(session_id: str) -> tuple[list[MapLocation], list[MapEd
     session_id = session_registry.resolve(session_id)
     _, locations, edges = await _session_graph(session_id)
     return locations, edges
+
+
+def _graph_response(
+    session_id: str, locations: list[MapLocation], edges: list[MapEdge]
+) -> MapGraphResponse:
+    return MapGraphResponse(
+        session_id=session_id,
+        locations=[map_location_to_out(location) for location in locations],
+        edges=[map_edge_to_out(edge) for edge in edges],
+    )
+
+
+def _require_place(locations: list[MapLocation], location_id: str) -> MapLocation:
+    for location in locations:
+        if location.id == location_id:
+            return location
+    raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Location not found')
 
 
 @router.get('/locations', response_model=MapLocationListResponse)
@@ -325,6 +355,95 @@ async def get_map(
         locations=[map_location_to_out(location) for location in locations],
         edges=[map_edge_to_out(edge) for edge in edges],
     )
+
+
+@router.post('/overrides/rename', response_model=MapGraphResponse)
+async def rename_map_location(req: MapRenameRequest) -> MapGraphResponse:
+    """Rename a place. Stored in map_overrides.json and reapplied on regenerate."""
+    session_id = session_registry.resolve(req.session_id)
+    name = req.canonical_name.strip()
+    if not name:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail='Name is required')
+    locations, edges = await _session_edges(session_id)
+    _require_place(locations, req.location_id)
+    record_rename(session_id, req.location_id, name)
+    locations, edges = await _session_edges(session_id)
+    return _graph_response(session_id, locations, edges)
+
+
+@router.post('/overrides/merge', response_model=MapGraphResponse)
+async def merge_map_locations(req: MapMergeRequest) -> MapGraphResponse:
+    """Fold source places into a surviving target. Stored in map_overrides.json."""
+    session_id = session_registry.resolve(req.session_id)
+    locations, edges = await _session_edges(session_id)
+    _require_place(locations, req.target_location_id)
+    sources = [item.strip() for item in req.source_location_ids if item and item.strip()]
+    sources = [item for item in sources if item != req.target_location_id]
+    if not sources:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail='Choose a place to merge')
+    for source_id in sources:
+        _require_place(locations, source_id)
+    record_merge(session_id, sources, req.target_location_id)
+    locations, edges = await _session_edges(session_id)
+    return _graph_response(session_id, locations, edges)
+
+
+@router.post('/overrides/split', response_model=MapGraphResponse)
+async def split_map_location(req: MapSplitRequest) -> MapGraphResponse:
+    """Carve a new place out of an existing one. Stored in map_overrides.json."""
+    session_id = session_registry.resolve(req.session_id)
+    name = req.canonical_name.strip()
+    if not name:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail='Name is required')
+    locations, edges = await _session_edges(session_id)
+    source = _require_place(locations, req.source_location_id)
+    new_id = (req.new_location_id or '').strip() or _next_location_id(locations)
+    event_ids = [item for item in req.event_ids if item in source.event_ids]
+    record_split(
+        session_id,
+        req.source_location_id,
+        new_id,
+        name,
+        event_ids=event_ids,
+    )
+    locations, edges = await _session_edges(session_id)
+    return _graph_response(session_id, locations, edges)
+
+
+@router.post('/overrides/connect', response_model=MapGraphResponse)
+async def connect_map_locations(req: MapConnectionRequest) -> MapGraphResponse:
+    """Add a link between two places. Stored in map_overrides.json."""
+    session_id = session_registry.resolve(req.session_id)
+    if req.from_location_id == req.to_location_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail='Choose two different places')
+    locations, edges = await _session_edges(session_id)
+    _require_place(locations, req.from_location_id)
+    _require_place(locations, req.to_location_id)
+    record_added_connection(
+        session_id,
+        req.from_location_id,
+        req.to_location_id,
+        req.relationship or 'travel',
+    )
+    locations, edges = await _session_edges(session_id)
+    return _graph_response(session_id, locations, edges)
+
+
+@router.post('/overrides/disconnect', response_model=MapGraphResponse)
+async def disconnect_map_locations(req: MapConnectionRequest) -> MapGraphResponse:
+    """Remove a link between two places. Stored in map_overrides.json."""
+    session_id = session_registry.resolve(req.session_id)
+    locations, edges = await _session_edges(session_id)
+    _require_place(locations, req.from_location_id)
+    _require_place(locations, req.to_location_id)
+    record_removed_connection(
+        session_id,
+        req.from_location_id,
+        req.to_location_id,
+        req.relationship,
+    )
+    locations, edges = await _session_edges(session_id)
+    return _graph_response(session_id, locations, edges)
 
 
 @router.delete('', response_model=MapDeleteResponse)
