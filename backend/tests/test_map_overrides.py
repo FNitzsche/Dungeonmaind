@@ -279,6 +279,49 @@ class MapOverridesRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload['locations'][0]['canonical_name'], 'The Crossing')
         self.assertEqual(payload['edges'], [])
 
+    async def test_generate_rebuilds_from_scratch_then_reapplies_overrides(self) -> None:
+        from app.domain.map_store import map_store
+        from app.domain.models import TimelineEvent
+        from app.domain.timeline_store import timeline_store
+
+        first = await self.client.post('/map/generate', json={'session_id': 'sess-overrides'})
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.json()['locations'][0]['canonical_name'], 'Velmora Crossing')
+        self.assertEqual(len(first.json()['edges']), 1)
+
+        leftover = _location('loc_99', 'Ghost Town', ['evt_ghost'], first_order=99)
+        leftover.session_id = 'sess-overrides'
+        stored_locations = await map_store.get_locations('sess-overrides') or []
+        stored_edges = await map_store.get_edges('sess-overrides') or []
+        await map_store.save_map('sess-overrides', [*stored_locations, leftover], stored_edges)
+
+        record_rename('sess-overrides', 'loc_1', 'The Crossing', path=self.path)
+        record_removed_connection('sess-overrides', 'loc_1', 'loc_2', path=self.path)
+        await timeline_store.add_events(
+            [
+                TimelineEvent(
+                    id='evt_3',
+                    session_id='sess-overrides',
+                    title='evt_3',
+                    description='',
+                    order=3,
+                    timestamp=3.0,
+                    location_entities=['Dragon Spire'],
+                )
+            ]
+        )
+
+        response = await self.client.post('/map/generate', json={'session_id': 'sess-overrides'})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        names = [location['canonical_name'] for location in payload['locations']]
+        self.assertEqual(names, ['The Crossing', 'Silver Lake', 'Dragon Spire'])
+        self.assertEqual(
+            [(edge['from_location_id'], edge['to_location_id']) for edge in payload['edges']],
+            [('loc_2', 'loc_3')],
+        )
+
 
 if __name__ == '__main__':
     unittest.main()

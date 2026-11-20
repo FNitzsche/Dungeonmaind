@@ -278,12 +278,11 @@ async def list_location_edges(
 
 @router.post('/generate', response_model=MapGenerateResponse)
 async def generate_session_map(req: MapGenerateRequest) -> MapGenerateResponse:
-    """Resolve places, infer links, and persist a session's map.
+    """Rebuild a session's map from the timeline, then reapply DM overrides.
 
-    Runs the full pipeline: fetches the session's timeline events, resolves
-    them into places, infers the links between those places, and saves both
-    into MapStore so later reads (including this session's other map
-    endpoints) return the same persisted graph.
+    Ignores any previously saved graph. Places and links are inferred
+    again from the current timeline, map_overrides.json corrections for
+    this session are applied, and the result is saved to MapStore.
 
     Args:
         req: MapGenerateRequest with the session_id to generate.
