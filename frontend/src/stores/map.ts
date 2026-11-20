@@ -10,6 +10,12 @@ import { buildMapFromTimeline, locationBelongsToNode, placeToId } from '@/utils/
 export type MapDataSource = 'api' | 'timeline'
 
 /**
+ * Whether the map API could be reached on the last load. A 404 ("no map saved
+ * yet") still counts as `up`: the server answered, it just has nothing to show.
+ */
+export type MapApiStatus = 'unknown' | 'up' | 'down'
+
+/**
  * Map store – loads session place graph and selected-place event links.
  * Falls back to timeline location_entities when the map API is unavailable.
  */
@@ -21,6 +27,7 @@ export const useMapStore = defineStore('map', () => {
   const generating = ref(false)
   const error = ref<string | null>(null)
   const dataSource = ref<MapDataSource>('timeline')
+  const apiStatus = ref<MapApiStatus>('unknown')
   const selectedPlaceId = ref<string | null>(null)
   const selectedEventIds = ref<string[]>([])
 
@@ -57,8 +64,11 @@ export const useMapStore = defineStore('map', () => {
       nodes.value = response.nodes ?? []
       edges.value = response.edges ?? []
       dataSource.value = 'api'
+      apiStatus.value = 'up'
     } catch (apiError) {
       if (sessionId.value !== id) return
+      const message = apiError instanceof Error ? apiError.message : 'Map API unavailable'
+      apiStatus.value = message.includes('404') ? 'up' : 'down'
       const timelineStore = useTimelineStore()
       const timelineIsForOtherSession = timelineStore.sessionId !== id
       if (
@@ -74,7 +84,6 @@ export const useMapStore = defineStore('map', () => {
       dataSource.value = 'timeline'
 
       if (fallback.nodes.length === 0) {
-        const message = apiError instanceof Error ? apiError.message : 'Map API unavailable'
         error.value =
           message.includes('404') || message.includes('HTTP 404')
             ? null
@@ -155,6 +164,7 @@ export const useMapStore = defineStore('map', () => {
     generating,
     error,
     dataSource,
+    apiStatus,
     selectedPlaceId,
     selectedEventIds,
     nodeCount,
