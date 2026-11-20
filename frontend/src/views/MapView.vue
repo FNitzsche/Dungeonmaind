@@ -9,6 +9,7 @@ import { useMapStore } from '@/stores/map'
 import { useSessionStore } from '@/stores/session'
 import { useTimelineStore } from '@/stores/timeline'
 import type { MapEdge, MapEdgeType } from '@/api/mapAPI'
+import MapEditPanel from '@/views/MapEditPanel.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -609,6 +610,8 @@ watch(
                 Also known as: {{ mapStore.selectedNode.aliases.join(', ') }}
               </p>
             </div>
+
+            <MapEditPanel />
 
             <div v-if="selectedEdge" class="link-card">
               <p class="sidebar-eyebrow">Selected path</p>

@@ -9,7 +9,11 @@ export interface MapNode {
   id: string
   label: string
   aliases?: string[]
+  event_ids?: string[]
 }
+
+/** Backend vocabulary for a stored map link. */
+export type MapRelationship = 'travel' | 'proximity'
 
 /** A connection between two places. */
 export interface MapEdge {
@@ -36,6 +40,7 @@ interface MapLocationOut {
   id: string
   canonical_name: string
   aliases?: string[]
+  event_ids?: string[]
 }
 
 /** An inferred link as returned by GET /map/edges. */
@@ -106,6 +111,7 @@ export async function getMap(sessionId = UNSAVED_SESSION_ID): Promise<MapGraphRe
       id: location.id,
       label: location.canonical_name,
       ...(location.aliases?.length ? { aliases: location.aliases } : {}),
+      ...(location.event_ids?.length ? { event_ids: location.event_ids } : {}),
     })),
     edges: (edges.edges ?? []).map((edge) => ({
       from: edge.from_location_id,
@@ -133,6 +139,90 @@ export async function generateMap(sessionId = UNSAVED_SESSION_ID): Promise<void>
  * @param sessionId - The session identifier.
  * @param placeId - The place node id.
  */
+function relationshipFromEdgeType(type: MapEdgeType): MapRelationship {
+  return type === 'near' ? 'proximity' : 'travel'
+}
+
+async function postOverride(path: string, body: Record<string, unknown>): Promise<void> {
+  const res = await fetch(`${base()}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) await throwMapError(res)
+}
+
+/** Persist a place rename in map_overrides.json. */
+export async function renamePlace(
+  sessionId: string,
+  locationId: string,
+  canonicalName: string,
+): Promise<void> {
+  await postOverride('/map/overrides/rename', {
+    session_id: sessionId,
+    location_id: locationId,
+    canonical_name: canonicalName,
+  })
+}
+
+/** Fold source places into a surviving target. */
+export async function mergePlaces(
+  sessionId: string,
+  sourceLocationIds: string[],
+  targetLocationId: string,
+): Promise<void> {
+  await postOverride('/map/overrides/merge', {
+    session_id: sessionId,
+    source_location_ids: sourceLocationIds,
+    target_location_id: targetLocationId,
+  })
+}
+
+/** Carve a new place out of an existing one. */
+export async function splitPlace(
+  sessionId: string,
+  sourceLocationId: string,
+  canonicalName: string,
+  eventIds: string[],
+): Promise<void> {
+  await postOverride('/map/overrides/split', {
+    session_id: sessionId,
+    source_location_id: sourceLocationId,
+    canonical_name: canonicalName,
+    event_ids: eventIds,
+  })
+}
+
+/** Add a link between two places. */
+export async function connectPlaces(
+  sessionId: string,
+  fromLocationId: string,
+  toLocationId: string,
+  type: MapEdgeType = 'traveled',
+): Promise<void> {
+  await postOverride('/map/overrides/connect', {
+    session_id: sessionId,
+    from_location_id: fromLocationId,
+    to_location_id: toLocationId,
+    relationship: relationshipFromEdgeType(type),
+  })
+}
+
+/** Remove a link between two places. */
+export async function disconnectPlaces(
+  sessionId: string,
+  fromLocationId: string,
+  toLocationId: string,
+  type?: MapEdgeType,
+): Promise<void> {
+  await postOverride('/map/overrides/disconnect', {
+    session_id: sessionId,
+    from_location_id: fromLocationId,
+    to_location_id: toLocationId,
+    ...(type ? { relationship: relationshipFromEdgeType(type) } : {}),
+  })
+}
+
 export async function getPlaceEvents(
   sessionId: string,
   placeId: string,

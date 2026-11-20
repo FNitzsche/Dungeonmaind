@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import * as mapApi from '@/api/mapAPI'
-import type { MapEdge, MapNode } from '@/api/mapAPI'
+import type { MapEdge, MapEdgeType, MapNode } from '@/api/mapAPI'
 import { useSessionStore } from '@/stores/session'
 import { useTimelineStore } from '@/stores/timeline'
 import { buildMapFromTimeline, locationBelongsToNode, placeToId } from '@/utils/mapFromTimeline'
@@ -25,6 +25,7 @@ export const useMapStore = defineStore('map', () => {
   const sessionId = ref('unsaved')
   const loading = ref(false)
   const generating = ref(false)
+  const saving = ref(false)
   const error = ref<string | null>(null)
   const dataSource = ref<MapDataSource>('timeline')
   const apiStatus = ref<MapApiStatus>('unknown')
@@ -156,12 +157,62 @@ export const useMapStore = defineStore('map', () => {
     selectedEventIds.value = []
   }
 
+  async function persistEdit(run: () => Promise<void>) {
+    saving.value = true
+    error.value = null
+    try {
+      await run()
+      await fetchMap()
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Failed to save map edit'
+      throw err
+    } finally {
+      saving.value = false
+    }
+  }
+
+  async function renamePlace(locationId: string, canonicalName: string) {
+    await persistEdit(() => mapApi.renamePlace(sessionId.value, locationId, canonicalName))
+  }
+
+  async function mergePlaces(sourceLocationIds: string[], targetLocationId: string) {
+    await persistEdit(() =>
+      mapApi.mergePlaces(sessionId.value, sourceLocationIds, targetLocationId),
+    )
+    if (sourceLocationIds.includes(selectedPlaceId.value ?? '')) {
+      await selectPlace(targetLocationId)
+    }
+  }
+
+  async function splitPlace(sourceLocationId: string, canonicalName: string, eventIds: string[]) {
+    await persistEdit(() =>
+      mapApi.splitPlace(sessionId.value, sourceLocationId, canonicalName, eventIds),
+    )
+  }
+
+  async function connectPlaces(fromLocationId: string, toLocationId: string, type?: MapEdgeType) {
+    await persistEdit(() =>
+      mapApi.connectPlaces(sessionId.value, fromLocationId, toLocationId, type),
+    )
+  }
+
+  async function disconnectPlaces(
+    fromLocationId: string,
+    toLocationId: string,
+    type?: MapEdgeType,
+  ) {
+    await persistEdit(() =>
+      mapApi.disconnectPlaces(sessionId.value, fromLocationId, toLocationId, type),
+    )
+  }
+
   return {
     nodes,
     edges,
     sessionId,
     loading,
     generating,
+    saving,
     error,
     dataSource,
     apiStatus,
@@ -175,5 +226,10 @@ export const useMapStore = defineStore('map', () => {
     selectPlace,
     resolvePlaceQuery,
     clearSelection,
+    renamePlace,
+    mergePlaces,
+    splitPlace,
+    connectPlaces,
+    disconnectPlaces,
   }
 })
