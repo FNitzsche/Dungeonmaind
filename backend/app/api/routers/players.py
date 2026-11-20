@@ -32,6 +32,7 @@ from app.base_models.schemas import (
 from app.core.bus import bus
 from app.domain.models import Player as DomainPlayer
 from app.domain.models import Voiceprint
+from app.domain.session_state import session_registry
 from app.domain.store import store
 
 router = APIRouter()
@@ -166,6 +167,14 @@ async def join(payload: PlayerIn, request: Request) -> PlayerOut:
         conflict = 'group size' in lowered or 'group role' in lowered or 'player name' in lowered
         code = status.HTTP_409_CONFLICT if conflict else status.HTTP_400_BAD_REQUEST
         raise HTTPException(status_code=code, detail=detail)
+
+    if player.role == Role.leader:
+        # A newly created leader opens a new game: give it its own session so it
+        # cannot see or extend the transcript, timeline or map of an earlier one.
+        session_registry.start_new()
+        await bus.publish(
+            {'type': 'session_changed', 'session_id': session_registry.active_session_id}
+        )
 
     out = player_to_out(player, request)
     await bus.publish({'type': 'join', 'player': out.model_dump()})

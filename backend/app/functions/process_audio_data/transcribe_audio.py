@@ -106,8 +106,17 @@ def load_transcription_model() -> object:
 
 
 def reload_transcription_model():
-    """Reload the transcription model (used when model setting changes)."""
+    """Reload the transcription model (used when model setting changes).
+
+    Does nothing when no model has been loaded yet: WhisperX is imported on the
+    first transcription, and that first load already uses the new setting.
+    Without this guard, changing the model before any recording raised
+    ``AttributeError: 'NoneType' object has no attribute 'load_model'``.
+    """
     global transcription_model
+    if transcription_model is None:
+        return
+    load_audio_dependencies()
     transcription_model = load_transcription_model()
 
 
