@@ -28,9 +28,42 @@ from app.domain.session_state import session_registry
 from app.domain.timeline_store import timeline_store
 from app.functions.geo.build_map import generate_map
 from app.functions.geo.link_builder import build_edges
+from app.functions.geo.map_overrides import apply_map_overrides, load_session_overrides
 from app.functions.geo.place_resolver import resolve_locations
 
 router = APIRouter()
+
+
+async def _raw_session_graph(
+    session_id: str,
+) -> tuple[list[TimelineEvent], list[MapLocation], list[MapEdge]]:
+    """Get a session's auto-generated map graph, before DM corrections.
+
+    Prefers the locations and edges saved by /map/generate; falls back to
+    resolving and inferring them live from the in-memory timeline.
+    """
+    events = await timeline_store.get_session_events(session_id)
+    stored_locations = await map_store.get_locations(session_id)
+    if stored_locations is not None:
+        locations = stored_locations
+        stored_edges = await map_store.get_edges(session_id)
+        edges = (
+            stored_edges
+            if stored_edges is not None
+            else build_edges(locations, events, session_id=session_id)
+        )
+        return events, locations, edges
+    locations = resolve_locations(events, session_id=session_id)
+    return events, locations, build_edges(locations, events, session_id=session_id)
+
+
+async def _session_graph(
+    session_id: str,
+) -> tuple[list[TimelineEvent], list[MapLocation], list[MapEdge]]:
+    """Get a session's map graph with map_overrides.json corrections applied."""
+    events, locations, edges = await _raw_session_graph(session_id)
+    locations, edges = apply_map_overrides(locations, edges, load_session_overrides(session_id))
+    return events, locations, edges
 
 
 async def _session_events_and_locations(
@@ -40,13 +73,11 @@ async def _session_events_and_locations(
 
     Prefers the locations saved by /map/generate; falls back to resolving
     them live from the in-memory timeline event list if nothing has been
-    generated yet for this session.
+    generated yet for this session. DM corrections from map_overrides.json
+    are applied on top of the auto-generated places.
     """
-    events = await timeline_store.get_session_events(session_id)
-    stored_locations = await map_store.get_locations(session_id)
-    if stored_locations is not None:
-        return events, stored_locations
-    return events, resolve_locations(events, session_id=session_id)
+    events, locations, _ = await _session_graph(session_id)
+    return events, locations
 
 
 async def _session_edges(session_id: str) -> tuple[list[MapLocation], list[MapEdge]]:
@@ -54,13 +85,12 @@ async def _session_edges(session_id: str) -> tuple[list[MapLocation], list[MapEd
 
     Prefers the edges saved by /map/generate; falls back to inferring them
     live from the resolved locations if nothing has been generated yet.
+    DM corrections from map_overrides.json are applied on top of the
+    auto-generated links.
     """
     session_id = session_registry.resolve(session_id)
-    events, locations = await _session_events_and_locations(session_id)
-    stored_edges = await map_store.get_edges(session_id)
-    if stored_edges is not None:
-        return locations, stored_edges
-    return locations, build_edges(locations, events, session_id=session_id)
+    _, locations, edges = await _session_graph(session_id)
+    return locations, edges
 
 
 @router.get('/locations', response_model=MapLocationListResponse)
@@ -95,7 +125,9 @@ async def list_location_events(
     """List timeline events linked to a resolved map place.
 
     Reads event_ids already stored on the MapLocation and fetches those
-    TimelineEvents. Does not re-scan location names.
+    TimelineEvents. Does not re-scan location names. Events recorded in an
+    earlier session are included when the stored place lists them, so a
+    tavern visited again in a later session still returns every visit.
 
     Args:
         location_id: Resolved place id (loc_1, loc_2, ...).
@@ -114,7 +146,13 @@ async def list_location_events(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Location not found')
 
     events_by_id = {event.id: event for event in events}
-    linked = [events_by_id[event_id] for event_id in location.event_ids if event_id in events_by_id]
+    linked: list[TimelineEvent] = []
+    for event_id in location.event_ids:
+        event = events_by_id.get(event_id)
+        if event is None:
+            event = await timeline_store.get_event(event_id)
+        if event is not None:
+            linked.append(event)
     return TimelineEventListResponse(
         session_id=session_id,
         events=[timeline_event_to_out(event) for event in linked],
