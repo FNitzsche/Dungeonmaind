@@ -104,6 +104,10 @@ async function handleGenerate() {
   }
 }
 
+async function handleGenerateMap() {
+  await mapStore.generateMap(sessionStore.sessionId)
+}
+
 async function handleClear() {
   await timelineStore.clearEvents()
 }
@@ -193,6 +197,16 @@ watch(
             @click="handleGenerate"
           >
             {{ timelineStore.generating ? 'Generating...' : 'Generate Events' }}
+          </button>
+          <button
+            v-if="sessionStore.isLeader"
+            class="btn btn-secondary"
+            :disabled="
+              timelineStore.events.length === 0 || timelineStore.generating || mapStore.generating
+            "
+            @click="handleGenerateMap"
+          >
+            {{ mapStore.generating ? 'Generating...' : 'Generate Map' }}
           </button>
           <button
             class="btn btn-danger"
@@ -451,6 +465,23 @@ watch(
 }
 
 .btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Quieter than the primary action, so "Generate Map" does not compete with "Generate Events". */
+.btn-secondary {
+  background-color: rgba(57, 36, 1, 0.14);
+  border-color: rgba(57, 36, 1, 0.3);
+  color: #392401;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: rgba(57, 36, 1, 0.24);
+  transform: translateY(-1px);
+}
+
+.btn-secondary:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
