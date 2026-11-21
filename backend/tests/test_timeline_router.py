@@ -11,6 +11,7 @@ from app.api.routers import timeline as timeline_router_module
 from app.domain.map_store import map_store
 from app.domain.models import TimelineEvent, TimelineEventType
 from app.domain.timeline_store import timeline_store
+from app.functions.embedding.entity_extractor import ExtractedEntities
 from app.functions.geo.build_map import generate_map
 
 SESSION_ID = 'Lost Mine/Session_1'
@@ -177,8 +178,44 @@ class TimelineRouterTests(unittest.IsolatedAsyncioTestCase):
             speakers=['Ana', 'DM'],
             timestamps=[1.5, 9.0],
             session_id=SESSION_ID,
+            entities=[None, None],
         )
         self.assertEqual(len((await self._list())['events']), 2)
+
+    async def test_generate_reuses_the_entities_saved_with_each_transcript(self) -> None:
+        docs = [
+            _doc(
+                'We leave Velmora Crossing at dawn.',
+                player_id='Ana',
+                start_time=1.5,
+                temporal_entities='dawn',
+                location_entities='Velmora Crossing',
+            ),
+            # Embedded without entity metadata: this chunk has to be extracted again.
+            _doc('We reach Phandalin.', player_id='DM', start_time=9.0),
+        ]
+        with (
+            mock.patch.object(
+                timeline_router_module, 'get_all_transcription_documents', return_value=docs
+            ),
+            mock.patch.object(
+                timeline_router_module,
+                'extract_events_from_transcriptions',
+                return_value=[_event('', 0, title='Explorers Depart')],
+            ) as extractor,
+        ):
+            res = await self.client.post('/timeline/generate', json={'session_id': SESSION_ID})
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(
+            extractor.call_args.kwargs['entities'],
+            [
+                ExtractedEntities(
+                    temporal_entities=['dawn'], location_entities=['Velmora Crossing']
+                ),
+                None,
+            ],
+        )
 
     async def test_generate_falls_back_to_transcript_metadata_without_llm(self) -> None:
         docs = [

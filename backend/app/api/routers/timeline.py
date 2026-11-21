@@ -18,6 +18,7 @@ from app.functions.embedding.embedding_model import get_all_transcription_docume
 from app.functions.geo.build_map import generate_map
 from app.functions.llm.event_extractor import (
     build_timeline_events_from_transcription_documents,
+    entities_from_metadata,
     extract_events_from_transcriptions,
 )
 
@@ -122,8 +123,16 @@ async def generate_events(req: TimelineGenerateRequest) -> TimelineGenerateRespo
     texts = [doc.page_content for doc in docs]
     speakers = [doc.metadata.get('player_id', 'unknown') for doc in docs]
     timestamps = [float(doc.metadata.get('start_time', 0.0)) for doc in docs]
+    # Each chunk's entities were already extracted when it was embedded. Reuse
+    # them instead of asking the LLM again; chunks without them (None) are
+    # still extracted by the event extractor.
+    saved_entities = [entities_from_metadata(doc.metadata) for doc in docs]
     events = extract_events_from_transcriptions(
-        texts=texts, speakers=speakers, timestamps=timestamps, session_id=session_id
+        texts=texts,
+        speakers=speakers,
+        timestamps=timestamps,
+        session_id=session_id,
+        entities=saved_entities,
     )
     if not events:
         events = build_timeline_events_from_transcription_documents(docs, session_id=session_id)

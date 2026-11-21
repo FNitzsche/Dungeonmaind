@@ -141,7 +141,9 @@ def make_fake_extractor():
     """One event per text that names a known place (stands in for the LLM)."""
     counter = itertools.count()
 
-    def fake_extract_events(texts, speakers=None, timestamps=None, session_id='default'):
+    def fake_extract_events(
+        texts, speakers=None, timestamps=None, session_id='default', entities=None
+    ):
         events = []
         for text in texts:
             places = [place for place in PLACES if place in text]

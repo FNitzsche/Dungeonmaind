@@ -78,7 +78,9 @@ def make_fake_extractor():
     """Build an event extractor that emits one event per segment naming a known place."""
     counter = itertools.count()
 
-    def fake_extract_events(texts, speakers=None, timestamps=None, session_id='default'):
+    def fake_extract_events(
+        texts, speakers=None, timestamps=None, session_id='default', entities=None
+    ):
         events = []
         for index, text in enumerate(texts):
             places = [place for place in KNOWN_PLACES if place in text]
