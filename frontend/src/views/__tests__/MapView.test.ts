@@ -4,6 +4,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import MapView from '@/views/MapView.vue'
 import { useMapStore } from '@/stores/map'
 import { useSessionStore } from '@/stores/session'
+import { useTimelineStore } from '@/stores/timeline'
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: {} }),
@@ -32,8 +33,14 @@ async function mountAsLeader(places: string[]) {
   return wrapper
 }
 
-function generateButton(wrapper: Awaited<ReturnType<typeof mountAsLeader>>) {
-  return wrapper.findAll('button').find((button) => /generate/i.test(button.text()))
+type Wrapper = Awaited<ReturnType<typeof mountAsLeader>>
+
+function buttonNamed(wrapper: Wrapper, name: RegExp) {
+  return wrapper.findAll('button').find((button) => name.test(button.text()))
+}
+
+function generateButton(wrapper: Wrapper) {
+  return buttonNamed(wrapper, /^(re)?generate map$/i)
 }
 
 describe('MapView generate button', () => {
@@ -51,5 +58,43 @@ describe('MapView generate button', () => {
     const wrapper = await mountAsLeader(['Neverwinter', 'Phandalin'])
 
     expect(generateButton(wrapper)?.text()).toBe('Regenerate map')
+  })
+})
+
+describe('MapView Generate Events button', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('generates the events and then rebuilds the map', async () => {
+    const wrapper = await mountAsLeader(['Neverwinter'])
+    const timelineStore = useTimelineStore()
+    const mapStore = useMapStore()
+    const order: string[] = []
+    timelineStore.generateEvents = vi.fn(async () => {
+      order.push('events')
+      return { session_id: 'unsaved', events_generated: 1, events: [] }
+    })
+    mapStore.generateMap = vi.fn(async () => {
+      order.push('map')
+    })
+
+    await buttonNamed(wrapper, /^generate events$/i)?.trigger('click')
+    await flushPromises()
+
+    expect(order).toEqual(['events', 'map'])
+  })
+
+  it('leaves the map alone when generating the events fails', async () => {
+    const wrapper = await mountAsLeader(['Neverwinter'])
+    const timelineStore = useTimelineStore()
+    const mapStore = useMapStore()
+    timelineStore.generateEvents = vi.fn(async () => null)
+    mapStore.generateMap = vi.fn()
+
+    await buttonNamed(wrapper, /^generate events$/i)?.trigger('click')
+    await flushPromises()
+
+    expect(mapStore.generateMap).not.toHaveBeenCalled()
   })
 })

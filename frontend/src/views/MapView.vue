@@ -312,6 +312,16 @@ const generateLabel = computed(() => {
   return mapStore.nodeCount > 0 ? 'Regenerate map' : 'Generate map'
 })
 
+// Same two steps as the timeline page: new events first, then the map built from them.
+async function handleGenerateEvents() {
+  const response = await timelineStore.generateEvents(sessionStore.sessionId)
+  if (!response) return
+  if (sessionStore.isLeader) {
+    await mapStore.generateMap(sessionStore.sessionId)
+    fitToJourney()
+  }
+}
+
 async function handleGenerateMap() {
   await mapStore.generateMap()
   fitToJourney()
@@ -390,6 +400,13 @@ watch(
             @click="clearSelection"
           >
             Clear selection
+          </button>
+          <button
+            class="btn btn-secondary"
+            :disabled="timelineStore.generating || mapStore.generating"
+            @click="handleGenerateEvents"
+          >
+            {{ timelineStore.generating ? 'Generating...' : 'Generate Events' }}
           </button>
           <button
             v-if="sessionStore.isLeader"
