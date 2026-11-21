@@ -261,7 +261,8 @@ class RecordingToSavedSessionFlowTests(PipelineTestCase):
         os.makedirs(self.saved_dir)
         self._original_group = store.group
         store.group = Group()
-        store.group.add_player('Ana', Role.leader)
+        self.leader = store.group.add_player('Ana', Role.leader)
+        self.leader_headers = {'X-Player-Id': str(self.leader.id)}
 
         def fake_copy_chroma_db(folder_path: str) -> None:
             os.makedirs(os.path.join(folder_path, 'chroma_db'))
@@ -419,7 +420,9 @@ class RecordingToSavedSessionFlowTests(PipelineTestCase):
     async def test_deleting_the_map_falls_back_to_live_resolution(self) -> None:
         await self._upload(self.draft_id)
 
-        res = await self.client.delete('/map', params={'session_id': self.draft_id})
+        res = await self.client.delete(
+            '/map', params={'session_id': self.draft_id}, headers=self.leader_headers
+        )
 
         self.assertEqual(res.json(), {'deleted': True, 'session_id': self.draft_id})
         graph = await self._get('/map', self.draft_id)
@@ -433,7 +436,11 @@ class RecordingToSavedSessionFlowTests(PipelineTestCase):
         timeline = await self._get('/timeline/events', self.draft_id)
         await self.client.delete(f'/timeline/events/{timeline["events"][2]["id"]}')
 
-        res = await self.client.post('/map/generate', json={'session_id': self.draft_id})
+        res = await self.client.post(
+            '/map/generate',
+            json={'session_id': self.draft_id},
+            headers=self.leader_headers,
+        )
 
         self.assertEqual(res.status_code, 200)
         body = res.json()

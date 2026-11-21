@@ -12,7 +12,8 @@ from app.base_models.map_base_models import (
     MapLocationListResponse,
 )
 from app.domain.map_store import map_store
-from app.domain.models import TimelineEvent
+from app.domain.models import Group, Role, TimelineEvent
+from app.domain.store import store
 from app.domain.timeline_store import timeline_store
 
 SESSION_ID = 'sess-integration'
@@ -52,15 +53,28 @@ class MapIntegrationTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
         await map_store.clear_session(SESSION_ID)
+        self._original_group = store.group
+        store.group = Group()
+        self.leader = store.group.add_player('Ana', Role.leader)
+        self.leader_headers = {'X-Player-Id': str(self.leader.id)}
         self.client = AsyncClient(transport=ASGITransport(app=_map_app()), base_url='http://test')
 
     async def asyncTearDown(self) -> None:
         await self.client.aclose()
         await timeline_store.clear_all()
         await map_store.clear_session(SESSION_ID)
+        store.group = self._original_group
+
+    async def _post(self, path: str, **kwargs):
+        kwargs.setdefault('headers', self.leader_headers)
+        return await self.client.post(path, **kwargs)
+
+    async def _delete(self, path: str, **kwargs):
+        kwargs.setdefault('headers', self.leader_headers)
+        return await self.client.delete(path, **kwargs)
 
     async def test_generate_returns_exactly_the_worked_example_from_the_plan(self) -> None:
-        response = await self.client.post('/map/generate', json={'session_id': SESSION_ID})
+        response = await self._post('/map/generate', json={'session_id': SESSION_ID})
 
         self.assertEqual(response.status_code, 200)
         payload = MapGenerateResponse.model_validate(response.json())
@@ -90,7 +104,7 @@ class MapIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(('loc_3', 'loc_3'), pairs)
 
     async def test_get_map_after_generate_returns_the_persisted_graph(self) -> None:
-        await self.client.post('/map/generate', json={'session_id': SESSION_ID})
+        await self._post('/map/generate', json={'session_id': SESSION_ID})
 
         response = await self.client.get('/map', params={'session_id': SESSION_ID})
 
@@ -109,7 +123,7 @@ class MapIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(payload.edges), 2)
 
     async def test_generated_map_survives_timeline_events_being_cleared(self) -> None:
-        await self.client.post('/map/generate', json={'session_id': SESSION_ID})
+        await self._post('/map/generate', json={'session_id': SESSION_ID})
         await timeline_store.clear_session(SESSION_ID)
 
         response = await self.client.get('/map', params={'session_id': SESSION_ID})
@@ -119,7 +133,7 @@ class MapIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(payload.edges), 2)
 
     async def test_location_events_click_through_resolves_after_generate(self) -> None:
-        await self.client.post('/map/generate', json={'session_id': SESSION_ID})
+        await self._post('/map/generate', json={'session_id': SESSION_ID})
 
         response = await self.client.get(
             '/map/locations/loc_3/events', params={'session_id': SESSION_ID}
@@ -129,7 +143,7 @@ class MapIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([event['id'] for event in response.json()['events']], ['evt_3', 'evt_4'])
 
     async def test_event_locations_click_through_resolves_after_generate(self) -> None:
-        await self.client.post('/map/generate', json={'session_id': SESSION_ID})
+        await self._post('/map/generate', json={'session_id': SESSION_ID})
 
         response = await self.client.get(
             '/map/events/evt_1/locations', params={'session_id': SESSION_ID}
@@ -142,7 +156,7 @@ class MapIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_locations_and_edges_endpoints_read_the_persisted_graph_after_generate(
         self,
     ) -> None:
-        await self.client.post('/map/generate', json={'session_id': SESSION_ID})
+        await self._post('/map/generate', json={'session_id': SESSION_ID})
 
         locations_response = await self.client.get(
             '/map/locations', params={'session_id': SESSION_ID}
@@ -155,9 +169,9 @@ class MapIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(edges_payload.total, 2)
 
     async def test_delete_map_clears_the_persisted_graph(self) -> None:
-        await self.client.post('/map/generate', json={'session_id': SESSION_ID})
+        await self._post('/map/generate', json={'session_id': SESSION_ID})
 
-        delete_response = await self.client.delete('/map', params={'session_id': SESSION_ID})
+        delete_response = await self._delete('/map', params={'session_id': SESSION_ID})
 
         self.assertEqual(delete_response.status_code, 200)
         delete_payload = MapDeleteResponse.model_validate(delete_response.json())
@@ -169,17 +183,17 @@ class MapIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(payload.locations), 3)
 
     async def test_delete_map_reports_false_when_nothing_was_generated(self) -> None:
-        response = await self.client.delete('/map', params={'session_id': SESSION_ID})
+        response = await self._delete('/map', params={'session_id': SESSION_ID})
 
         self.assertEqual(response.status_code, 200)
         payload = MapDeleteResponse.model_validate(response.json())
         self.assertFalse(payload.deleted)
 
     async def test_regenerate_overwrites_the_previously_saved_map(self) -> None:
-        await self.client.post('/map/generate', json={'session_id': SESSION_ID})
+        await self._post('/map/generate', json={'session_id': SESSION_ID})
         await timeline_store.add_events([_event('evt_5', ['Dragon Spire'], order=5)])
 
-        response = await self.client.post('/map/generate', json={'session_id': SESSION_ID})
+        response = await self._post('/map/generate', json={'session_id': SESSION_ID})
 
         payload = MapGenerateResponse.model_validate(response.json())
         self.assertEqual(payload.locations_generated, 4)

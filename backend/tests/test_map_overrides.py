@@ -278,7 +278,8 @@ class MapOverridesRouterTests(unittest.IsolatedAsyncioTestCase):
 
         from app.api.routers.map import router as map_router
         from app.domain.map_store import map_store
-        from app.domain.models import TimelineEvent
+        from app.domain.models import Group, Role, TimelineEvent
+        from app.domain.store import store
         from app.domain.timeline_store import timeline_store
 
         self.tmpdir = tempfile.TemporaryDirectory()
@@ -312,17 +313,27 @@ class MapOverridesRouterTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
         await map_store.clear_session('sess-overrides')
+        self._original_group = store.group
+        store.group = Group()
+        self.leader = store.group.add_player('Ana', Role.leader)
+        self.leader_headers = {'X-Player-Id': str(self.leader.id)}
         application = FastAPI()
         application.include_router(map_router, prefix='/map')
         self.client = AsyncClient(transport=ASGITransport(app=application), base_url='http://test')
 
+    async def _post(self, path: str, **kwargs):
+        kwargs.setdefault('headers', self.leader_headers)
+        return await self.client.post(path, **kwargs)
+
     async def asyncTearDown(self) -> None:
         from app.domain.map_store import map_store
+        from app.domain.store import store
         from app.domain.timeline_store import timeline_store
 
         await self.client.aclose()
         await timeline_store.clear_all()
         await map_store.clear_session('sess-overrides')
+        store.group = self._original_group
         self.patcher.stop()
         self.tmpdir.cleanup()
 
@@ -342,7 +353,7 @@ class MapOverridesRouterTests(unittest.IsolatedAsyncioTestCase):
         from app.domain.models import TimelineEvent
         from app.domain.timeline_store import timeline_store
 
-        first = await self.client.post('/map/generate', json={'session_id': 'sess-overrides'})
+        first = await self._post('/map/generate', json={'session_id': 'sess-overrides'})
         self.assertEqual(first.status_code, 200)
         self.assertEqual(first.json()['locations'][0]['canonical_name'], 'Velmora Crossing')
         self.assertEqual(len(first.json()['edges']), 1)
@@ -369,7 +380,7 @@ class MapOverridesRouterTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
 
-        response = await self.client.post('/map/generate', json={'session_id': 'sess-overrides'})
+        response = await self._post('/map/generate', json={'session_id': 'sess-overrides'})
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
@@ -381,9 +392,9 @@ class MapOverridesRouterTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_rename_endpoint_updates_the_place_name(self) -> None:
-        await self.client.post('/map/generate', json={'session_id': 'sess-overrides'})
+        await self._post('/map/generate', json={'session_id': 'sess-overrides'})
 
-        response = await self.client.post(
+        response = await self._post(
             '/map/overrides/rename',
             json={
                 'session_id': 'sess-overrides',
@@ -398,9 +409,9 @@ class MapOverridesRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stored.renames[0].canonical_name, 'The Crossing')
 
     async def test_merge_endpoint_folds_source_into_target(self) -> None:
-        await self.client.post('/map/generate', json={'session_id': 'sess-overrides'})
+        await self._post('/map/generate', json={'session_id': 'sess-overrides'})
 
-        response = await self.client.post(
+        response = await self._post(
             '/map/overrides/merge',
             json={
                 'session_id': 'sess-overrides',
@@ -414,9 +425,9 @@ class MapOverridesRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.json()['edges'], [])
 
     async def test_split_endpoint_carves_out_a_new_place(self) -> None:
-        await self.client.post('/map/generate', json={'session_id': 'sess-overrides'})
+        await self._post('/map/generate', json={'session_id': 'sess-overrides'})
 
-        response = await self.client.post(
+        response = await self._post(
             '/map/overrides/split',
             json={
                 'session_id': 'sess-overrides',
@@ -433,8 +444,8 @@ class MapOverridesRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(gate['event_ids'], ['evt_1'])
 
     async def test_split_after_merge_does_not_reuse_a_merged_id(self) -> None:
-        await self.client.post('/map/generate', json={'session_id': 'sess-overrides'})
-        await self.client.post(
+        await self._post('/map/generate', json={'session_id': 'sess-overrides'})
+        await self._post(
             '/map/overrides/merge',
             json={
                 'session_id': 'sess-overrides',
@@ -443,7 +454,7 @@ class MapOverridesRouterTests(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-        response = await self.client.post(
+        response = await self._post(
             '/map/overrides/split',
             json={
                 'session_id': 'sess-overrides',
@@ -461,9 +472,9 @@ class MapOverridesRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(gate['event_ids'], ['evt_1'])
 
     async def test_connect_and_disconnect_endpoints_rewire_links(self) -> None:
-        await self.client.post('/map/generate', json={'session_id': 'sess-overrides'})
+        await self._post('/map/generate', json={'session_id': 'sess-overrides'})
 
-        disconnected = await self.client.post(
+        disconnected = await self._post(
             '/map/overrides/disconnect',
             json={
                 'session_id': 'sess-overrides',
@@ -474,7 +485,7 @@ class MapOverridesRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(disconnected.status_code, 200)
         self.assertEqual(disconnected.json()['edges'], [])
 
-        connected = await self.client.post(
+        connected = await self._post(
             '/map/overrides/connect',
             json={
                 'session_id': 'sess-overrides',
@@ -489,6 +500,46 @@ class MapOverridesRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(edges[0]['from_location_id'], 'loc_2')
         self.assertEqual(edges[0]['to_location_id'], 'loc_1')
         self.assertEqual(edges[0]['relationship'], 'proximity')
+
+    async def test_member_can_view_the_map_but_cannot_edit_it(self) -> None:
+        from app.domain.models import Role
+        from app.domain.store import store
+
+        await self._post('/map/generate', json={'session_id': 'sess-overrides'})
+        member = store.group.add_player('Kim', Role.member)
+        member_headers = {'X-Player-Id': str(member.id)}
+
+        rename = await self.client.post(
+            '/map/overrides/rename',
+            json={
+                'session_id': 'sess-overrides',
+                'location_id': 'loc_1',
+                'canonical_name': 'Nope',
+            },
+            headers=member_headers,
+        )
+        self.assertEqual(rename.status_code, 403)
+
+        generate = await self.client.post(
+            '/map/generate',
+            json={'session_id': 'sess-overrides'},
+            headers=member_headers,
+        )
+        self.assertEqual(generate.status_code, 403)
+
+        unauthenticated = await self.client.post(
+            '/map/overrides/rename',
+            json={
+                'session_id': 'sess-overrides',
+                'location_id': 'loc_1',
+                'canonical_name': 'Nope',
+            },
+        )
+        self.assertEqual(unauthenticated.status_code, 403)
+
+        visible = await self.client.get('/map', params={'session_id': 'sess-overrides'})
+        self.assertEqual(visible.status_code, 200)
+        self.assertEqual(visible.json()['locations'][0]['canonical_name'], 'Velmora Crossing')
 
 
 if __name__ == '__main__':

@@ -265,6 +265,7 @@ class SessionIsolationTestCase(unittest.IsolatedAsyncioTestCase):
         store.group = Group()
         res = await self.client.post('/players', json={'name': leader_name, 'role': 'leader'})
         self.assertEqual(res.status_code, 201, res.text)
+        self.leader_id = res.json()['id']
         return await self.current_session()
 
     async def record(self, session_id: str | None, segments: list[dict]) -> None:
@@ -464,7 +465,11 @@ class TwoSessionsNeverMixTests(SessionIsolationTestCase):
     async def test_map_generation_uses_only_this_sessions_events(self) -> None:
         _, second = await self._play_two_games()
 
-        res = await self.client.post('/map/generate', json={'session_id': second})
+        res = await self.client.post(
+            '/map/generate',
+            json={'session_id': second},
+            headers={'X-Player-Id': self.leader_id},
+        )
 
         body = res.json()
         self.assertEqual(body['session_id'], second)
