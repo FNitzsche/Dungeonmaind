@@ -6,10 +6,11 @@ live from the in-memory timeline event list, so Places/Links lookups keep
 working standalone without requiring generation first.
 """
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.mappers.map_mapper import map_edge_to_out, map_location_to_out
 from app.api.mappers.timeline_mapper import timeline_event_to_out
+from app.api.routers.players import _require_leader
 from app.base_models.map_base_models import (
     MapConnectionRequest,
     MapDeleteResponse,
@@ -27,6 +28,7 @@ from app.base_models.timeline_base_models import TimelineEventListResponse
 from app.domain.map_edge import MapEdge
 from app.domain.map_location import MapLocation
 from app.domain.map_store import map_store
+from app.domain.models import Player as DomainPlayer
 from app.domain.models import TimelineEvent
 from app.domain.session_state import session_registry
 from app.domain.timeline_store import timeline_store
@@ -307,8 +309,13 @@ async def list_location_edges(
 
 
 @router.post('/generate', response_model=MapGenerateResponse)
-async def generate_session_map(req: MapGenerateRequest) -> MapGenerateResponse:
+async def generate_session_map(
+    req: MapGenerateRequest,
+    _leader: DomainPlayer = Depends(_require_leader),
+) -> MapGenerateResponse:
     """Rebuild a session's map from the timeline, then reapply DM overrides.
+
+    Leader-only. Other players may view the saved map but cannot regenerate it.
 
     Ignores any previously saved graph. Places and links are inferred
     again from the current timeline, map_overrides.json corrections for
@@ -358,8 +365,11 @@ async def get_map(
 
 
 @router.post('/overrides/rename', response_model=MapGraphResponse)
-async def rename_map_location(req: MapRenameRequest) -> MapGraphResponse:
-    """Rename a place. Stored in map_overrides.json and reapplied on regenerate."""
+async def rename_map_location(
+    req: MapRenameRequest,
+    _leader: DomainPlayer = Depends(_require_leader),
+) -> MapGraphResponse:
+    """Rename a place. Leader-only. Stored in map_overrides.json and reapplied on regenerate."""
     session_id = session_registry.resolve(req.session_id)
     name = req.canonical_name.strip()
     if not name:
@@ -372,8 +382,11 @@ async def rename_map_location(req: MapRenameRequest) -> MapGraphResponse:
 
 
 @router.post('/overrides/merge', response_model=MapGraphResponse)
-async def merge_map_locations(req: MapMergeRequest) -> MapGraphResponse:
-    """Fold source places into a surviving target. Stored in map_overrides.json."""
+async def merge_map_locations(
+    req: MapMergeRequest,
+    _leader: DomainPlayer = Depends(_require_leader),
+) -> MapGraphResponse:
+    """Fold source places into a surviving target. Leader-only."""
     session_id = session_registry.resolve(req.session_id)
     locations, edges = await _session_edges(session_id)
     _require_place(locations, req.target_location_id)
@@ -389,8 +402,11 @@ async def merge_map_locations(req: MapMergeRequest) -> MapGraphResponse:
 
 
 @router.post('/overrides/split', response_model=MapGraphResponse)
-async def split_map_location(req: MapSplitRequest) -> MapGraphResponse:
-    """Carve a new place out of an existing one. Stored in map_overrides.json."""
+async def split_map_location(
+    req: MapSplitRequest,
+    _leader: DomainPlayer = Depends(_require_leader),
+) -> MapGraphResponse:
+    """Carve a new place out of an existing one. Leader-only."""
     session_id = session_registry.resolve(req.session_id)
     name = req.canonical_name.strip()
     if not name:
@@ -412,8 +428,11 @@ async def split_map_location(req: MapSplitRequest) -> MapGraphResponse:
 
 
 @router.post('/overrides/connect', response_model=MapGraphResponse)
-async def connect_map_locations(req: MapConnectionRequest) -> MapGraphResponse:
-    """Add a link between two places. Stored in map_overrides.json."""
+async def connect_map_locations(
+    req: MapConnectionRequest,
+    _leader: DomainPlayer = Depends(_require_leader),
+) -> MapGraphResponse:
+    """Add a link between two places. Leader-only."""
     session_id = session_registry.resolve(req.session_id)
     if req.from_location_id == req.to_location_id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail='Choose two different places')
@@ -431,8 +450,11 @@ async def connect_map_locations(req: MapConnectionRequest) -> MapGraphResponse:
 
 
 @router.post('/overrides/disconnect', response_model=MapGraphResponse)
-async def disconnect_map_locations(req: MapConnectionRequest) -> MapGraphResponse:
-    """Remove a link between two places. Stored in map_overrides.json."""
+async def disconnect_map_locations(
+    req: MapConnectionRequest,
+    _leader: DomainPlayer = Depends(_require_leader),
+) -> MapGraphResponse:
+    """Remove a link between two places. Leader-only."""
     session_id = session_registry.resolve(req.session_id)
     locations, edges = await _session_edges(session_id)
     _require_place(locations, req.from_location_id)
@@ -450,8 +472,9 @@ async def disconnect_map_locations(req: MapConnectionRequest) -> MapGraphRespons
 @router.delete('', response_model=MapDeleteResponse)
 async def delete_map(
     session_id: str = Query('default', description='Session identifier'),
+    _leader: DomainPlayer = Depends(_require_leader),
 ) -> MapDeleteResponse:
-    """Clear a session's saved map.
+    """Clear a session's saved map. Leader-only.
 
     Args:
         session_id: Session identifier (default 'default').
