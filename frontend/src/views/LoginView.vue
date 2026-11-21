@@ -246,15 +246,34 @@ async function onSubmit(e: Event) {
   if (nameError.value) return
 
   submitting.value = true
+  serverError.value = ''
   try {
-    await preflightAndJoin(backendUrl, playerName.value.trim(), effectiveRole)
+    // Rejoin by id. Going through the name preflight instead would treat an
+    // already-active seat as a conflict and never send reuse_id.
+    if (selectedPlayer.value !== undefined) {
+      await store.join(selectedPlayer.value.name, effectiveRole, selectedPlayer.value.id)
+    } else {
+      await preflightAndJoin(backendUrl, playerName.value.trim(), effectiveRole)
+    }
     store.setLocalNetworkIP(lastValidIP)
     await router.push({ name: 'home' })
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Join error:', err)
+    serverError.value = joinErrorMessage(err)
   } finally {
     submitting.value = false
   }
+}
+
+function joinErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err)
+  try {
+    const parsed = JSON.parse(raw) as { detail?: unknown }
+    if (typeof parsed.detail === 'string') return parsed.detail
+  } catch {
+    // not JSON
+  }
+  return raw || 'Join failed'
 }
 
 function normalizeOrigin(input: string): string {
@@ -340,15 +359,17 @@ const selectedPlayer = ref<PlayerOut>()
 
 async function JoinExistingPlayer() {
   selectedPlayer.value = undefined
+  serverError.value = ''
   if (!setConnection.value) await onCheck()
-  if (setConnection.value) {
+  if (!setConnection.value) return
+  try {
     allPlayers.value = await api.listPlayers(true)
-    if (allPlayers.value.filter((p) => p.status === 'inactive').length === 0) {
-      window.alert(`Es wurden keine inaktiven Spieler gefunden. ` + `Erstelle einen neuen.`)
-      return
-    }
-    showExistingPlayerModal.value = true
+  } catch (err: unknown) {
+    console.error('List players error:', err)
+    allPlayers.value = []
+    serverError.value = joinErrorMessage(err)
   }
+  showExistingPlayerModal.value = true
 }
 </script>
 
@@ -554,8 +575,11 @@ async function JoinExistingPlayer() {
           <h2>Select your player</h2>
 
           <div class="player-list">
+            <div v-if="allPlayers.length === 0 && !serverError" class="no-sessions-text">
+              No players in this session. Import a saved session first, or join as a new player.
+            </div>
             <div
-              v-for="player in allPlayers.filter((p) => p.status === 'inactive')"
+              v-for="player in allPlayers"
               :key="player.id ?? player.name"
               class="player-item"
               :class="{
@@ -569,10 +593,11 @@ async function JoinExistingPlayer() {
                 }
               "
             >
-              {{ player.name }} ({{ player.role }})
+              {{ player.name }} ({{ player.role }}, {{ player.status }})
               <span v-if="!isLocalhost && player.role === 'leader'"> 🔒</span>
             </div>
           </div>
+          <p v-if="serverError" class="error">{{ serverError }}</p>
 
           <!-- IP nur anzeigen, wenn ein Leader ausgewählt ist -->
           <div v-if="selectedPlayer?.role === 'leader'">
@@ -601,7 +626,12 @@ async function JoinExistingPlayer() {
           </div>
 
           <div class="modal-buttons">
-            <button class="done-button" type="submit" :disabled="submitting" @click="onSubmit">
+            <button
+              class="done-button"
+              type="button"
+              :disabled="submitting || selectedPlayer === undefined"
+              @click="onSubmit"
+            >
               {{ submitting ? 'Join ...' : 'Join' }}
             </button>
             <button class="button" @click="showExistingPlayerModal = false">Cancel</button>
