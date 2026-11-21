@@ -153,6 +153,15 @@ describe('MapView when the map API is down', () => {
     expect(wrapper.text()).not.toContain('Showing places inferred')
   })
 
+  it('says so once when the timeline cannot be loaded either', async () => {
+    vi.mocked(timelineApi.listEvents).mockRejectedValue(new TypeError('Failed to fetch'))
+    const wrapper = mount(MapView, { global: { stubs: { MapEditPanel: true } } })
+    await flushPromises()
+
+    expect(mentionsOfOutage(wrapper)).toBe(1)
+    expect(wrapper.find('.error-banner').exists()).toBe(false)
+  })
+
   it('says it is showing places from the timeline when there are some', async () => {
     const wrapper = await mountWithTimeline([
       {

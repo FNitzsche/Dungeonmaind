@@ -312,13 +312,19 @@ const generateLabel = computed(() => {
   return mapStore.nodeCount > 0 ? 'Regenerate map' : 'Generate map'
 })
 
-// Generate Events can fail too, so the banner shows the problem from either store.
-const errorMessage = computed(() => mapStore.error ?? timelineStore.error)
+// Why the last Generate Events click failed. Only that click is shown here: a failed
+// background load of the timeline would repeat the "Map API unavailable" banner.
+const generateEventsError = ref<string | null>(null)
+const errorMessage = computed(() => mapStore.error ?? generateEventsError.value)
 
 // Same two steps as the timeline page: new events first, then the map built from them.
 async function handleGenerateEvents() {
+  generateEventsError.value = null
   const response = await timelineStore.generateEvents(sessionStore.sessionId)
-  if (!response) return
+  if (!response) {
+    generateEventsError.value = timelineStore.error
+    return
+  }
   if (sessionStore.isLeader) {
     await mapStore.generateMap(sessionStore.sessionId)
     fitToJourney()
