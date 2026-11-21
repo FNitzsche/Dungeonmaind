@@ -37,7 +37,7 @@ export interface MapPlaceEventsResponse {
 }
 
 /** A resolved place as returned by GET /map/locations. */
-interface MapLocationOut {
+export interface MapLocationOut {
   id: string
   canonical_name: string
   aliases?: string[]
@@ -45,7 +45,7 @@ interface MapLocationOut {
 }
 
 /** An inferred link as returned by GET /map/edges. */
-interface MapEdgeOut {
+export interface MapEdgeOut {
   from_location_id: string
   to_location_id: string
   relationship: string
@@ -71,9 +71,29 @@ function base(): string {
 }
 
 /** Identify the current player so the backend can apply the leader role check. */
-function leaderHeaders(): Record<string, string> {
-  const playerId = useSessionStore().currentPlayer?.id
-  return playerId ? { 'X-Player-Id': playerId } : {}
+function leaderPlayerId(): string | undefined {
+  const id = useSessionStore().currentPlayer?.id
+  return typeof id === 'string' && id.trim() ? id.trim() : undefined
+}
+
+/** POST a leader-only map write, sending the player id as header and query. */
+async function leaderPost(path: string, body: Record<string, unknown>): Promise<void> {
+  const playerId = leaderPlayerId()
+  if (!playerId) {
+    throw new Error('Join as the leader on this device before editing the map.')
+  }
+  const url = new URL(path, base())
+  url.searchParams.set('actor_id', playerId)
+  const res = await fetch(url.toString(), {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Player-Id': playerId,
+    },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) await throwMapError(res)
 }
 
 async function throwMapError(res: Response): Promise<never> {
@@ -98,29 +118,21 @@ async function getJson<T>(path: string, sessionId: string): Promise<T> {
   return (await res.json()) as T
 }
 
-/**
- * Fetch the session map graph.
- *
- * The backend exposes places and links as two separate collections
- * (`/map/locations` and `/map/edges`), so they are requested together and
- * assembled into the single graph the map view renders.
- * @param sessionId - The session identifier (defaults to 'unsaved').
- */
-export async function getMap(sessionId = UNSAVED_SESSION_ID): Promise<MapGraphResponse> {
-  const [locations, edges] = await Promise.all([
-    getJson<{ locations: MapLocationOut[] }>('/map/locations', sessionId),
-    getJson<{ edges: MapEdgeOut[] }>('/map/edges', sessionId),
-  ])
-
+/** Turn backend location/edge lists into the graph the map view renders. */
+export function graphFromLocationsAndEdges(
+  sessionId: string,
+  locations: MapLocationOut[] = [],
+  edges: MapEdgeOut[] = [],
+): MapGraphResponse {
   return {
     session_id: sessionId,
-    nodes: (locations.locations ?? []).map((location) => ({
+    nodes: locations.map((location) => ({
       id: location.id,
       label: location.canonical_name,
       ...(location.aliases?.length ? { aliases: location.aliases } : {}),
       ...(location.event_ids?.length ? { event_ids: location.event_ids } : {}),
     })),
-    edges: (edges.edges ?? []).map((edge) => ({
+    edges: edges.map((edge) => ({
       from: edge.from_location_id,
       to: edge.to_location_id,
       type: toEdgeType(edge.relationship),
@@ -128,17 +140,21 @@ export async function getMap(sessionId = UNSAVED_SESSION_ID): Promise<MapGraphRe
   }
 }
 
+export async function getMap(sessionId = UNSAVED_SESSION_ID): Promise<MapGraphResponse> {
+  const [locations, edges] = await Promise.all([
+    getJson<{ locations: MapLocationOut[] }>('/map/locations', sessionId),
+    getJson<{ edges: MapEdgeOut[] }>('/map/edges', sessionId),
+  ])
+
+  return graphFromLocationsAndEdges(sessionId, locations.locations ?? [], edges.edges ?? [])
+}
+
 /**
  * Resolve places and links from the session timeline and save them on the backend.
  * @param sessionId - The session identifier (defaults to 'unsaved').
  */
 export async function generateMap(sessionId = UNSAVED_SESSION_ID): Promise<void> {
-  const res = await fetch(`${base()}/map/generate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...leaderHeaders() },
-    body: JSON.stringify({ session_id: sessionId }),
-  })
-  if (!res.ok) await throwMapError(res)
+  await leaderPost('/map/generate', { session_id: sessionId })
 }
 
 /**
@@ -151,12 +167,7 @@ function relationshipFromEdgeType(type: MapEdgeType): MapRelationship {
 }
 
 async function postOverride(path: string, body: Record<string, unknown>): Promise<void> {
-  const res = await fetch(`${base()}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...leaderHeaders() },
-    body: JSON.stringify(body),
-  })
-  if (!res.ok) await throwMapError(res)
+  await leaderPost(path, body)
 }
 
 /** Persist a place rename in map_overrides.json. */
