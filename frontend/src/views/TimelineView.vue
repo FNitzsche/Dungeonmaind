@@ -99,7 +99,9 @@ function closeDetail() {
 async function handleGenerate() {
   const response = await timelineStore.generateEvents(sessionStore.sessionId)
   if (!response) return
-  await mapStore.generateMap(sessionStore.sessionId)
+  if (sessionStore.isLeader) {
+    await mapStore.generateMap(sessionStore.sessionId)
+  }
 }
 
 async function handleClear() {

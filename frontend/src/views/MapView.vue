@@ -386,6 +386,7 @@ watch(
             Clear selection
           </button>
           <button
+            v-if="sessionStore.isLeader"
             class="btn btn-primary"
             :disabled="mapStore.loading || mapStore.generating"
             @click="handleGenerateMap"

@@ -1,4 +1,5 @@
 import { SERVER_CONFIG } from '@/config/config'
+import { useSessionStore } from '@/stores/session'
 import { UNSAVED_SESSION_ID } from '@/utils/sessionId'
 
 /** Edge types between places on the campaign map. */
@@ -69,6 +70,12 @@ function base(): string {
   return SERVER_CONFIG.BASE_URL
 }
 
+/** Identify the current player so the backend can apply the leader role check. */
+function leaderHeaders(): Record<string, string> {
+  const playerId = useSessionStore().currentPlayer?.id
+  return playerId ? { 'X-Player-Id': playerId } : {}
+}
+
 async function throwMapError(res: Response): Promise<never> {
   let message = `HTTP ${res.status}`
   try {
@@ -128,7 +135,7 @@ export async function getMap(sessionId = UNSAVED_SESSION_ID): Promise<MapGraphRe
 export async function generateMap(sessionId = UNSAVED_SESSION_ID): Promise<void> {
   const res = await fetch(`${base()}/map/generate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...leaderHeaders() },
     body: JSON.stringify({ session_id: sessionId }),
   })
   if (!res.ok) await throwMapError(res)
@@ -146,7 +153,7 @@ function relationshipFromEdgeType(type: MapEdgeType): MapRelationship {
 async function postOverride(path: string, body: Record<string, unknown>): Promise<void> {
   const res = await fetch(`${base()}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...leaderHeaders() },
     body: JSON.stringify(body),
   })
   if (!res.ok) await throwMapError(res)

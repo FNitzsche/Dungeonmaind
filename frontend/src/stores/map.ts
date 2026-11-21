@@ -102,6 +102,10 @@ export const useMapStore = defineStore('map', () => {
   async function generateMap(forSessionId?: string) {
     const id = resolveSessionId(forSessionId)
     if (generating.value) return
+    if (!useSessionStore().isLeader) {
+      error.value = 'Only the leader can generate the map'
+      return
+    }
     generating.value = true
     error.value = null
     try {
@@ -158,6 +162,10 @@ export const useMapStore = defineStore('map', () => {
   }
 
   async function persistEdit(run: () => Promise<void>) {
+    if (!useSessionStore().isLeader) {
+      error.value = 'Only the leader can edit the map'
+      return
+    }
     saving.value = true
     error.value = null
     try {
