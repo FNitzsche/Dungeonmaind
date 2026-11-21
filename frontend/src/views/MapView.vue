@@ -306,6 +306,12 @@ function edgePath(fromId: string, toId: string): string {
   return `M ${from.x} ${from.y} Q ${cx} ${cy} ${to.x} ${to.y}`
 }
 
+// A map that already has places is rebuilt from the timeline, not created.
+const generateLabel = computed(() => {
+  if (mapStore.generating) return 'Generating...'
+  return mapStore.nodeCount > 0 ? 'Regenerate map' : 'Generate map'
+})
+
 async function handleGenerateMap() {
   await mapStore.generateMap()
   fitToJourney()
@@ -391,7 +397,7 @@ watch(
             :disabled="mapStore.loading || mapStore.generating"
             @click="handleGenerateMap"
           >
-            {{ mapStore.generating ? 'Generating...' : 'Generate map' }}
+            {{ generateLabel }}
           </button>
           <button class="btn btn-secondary" :disabled="mapStore.loading" @click="loadMap">
             {{ mapStore.loading ? 'Loading...' : 'Refresh Map' }}
