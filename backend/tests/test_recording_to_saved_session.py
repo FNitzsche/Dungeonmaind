@@ -21,6 +21,7 @@ from unittest import mock
 
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from langchain_core.documents import Document
 
 from app.api.routers import export_import_session as export_import_router
 from app.api.routers.map import router as map_router
@@ -33,6 +34,7 @@ from app.domain.session_state import session_registry
 from app.domain.store import store
 from app.domain.timeline_store import timeline_store
 from app.domain.transcript_store import transcript_store
+from app.functions.embedding.entity_extractor import ExtractedEntities
 from app.functions.process_audio_data import transcribe_audio as pipeline
 
 CAMPAIGN = 'Lost Mine'
@@ -158,6 +160,33 @@ class PipelineTestCase(unittest.IsolatedAsyncioTestCase):
 
 
 class TranscriptionPipelineTests(PipelineTestCase):
+    async def test_events_reuse_the_entities_saved_while_embedding(self) -> None:
+        seen: list = []
+
+        def embed_with_entities(
+            embedding_text, speakers, timestamps=None, persist_directory=None, session_id=None
+        ):
+            return [
+                Document(
+                    page_content=text,
+                    metadata={'temporal_entities': 'dawn', 'location_entities': 'Neverwinter'},
+                )
+                for text in embedding_text
+            ]
+
+        def spy_extract(texts, speakers=None, timestamps=None, session_id='default', entities=None):
+            seen.append(entities)
+            return []
+
+        with (
+            mock.patch.object(pipeline, 'embedd_transcriptions', embed_with_entities),
+            mock.patch.object(pipeline, 'extract_events_from_transcriptions', spy_extract),
+        ):
+            await pipeline.transcribe_audio(b'audio', 'audio/webm', session_id=SAVED_ID)
+
+        saved = ExtractedEntities(temporal_entities=['dawn'], location_entities=['Neverwinter'])
+        self.assertEqual(seen, [[saved, saved]])
+
     async def test_chunk_becomes_transcript_timeline_and_map(self) -> None:
         segments = await pipeline.transcribe_audio(b'audio', 'audio/webm', session_id=SAVED_ID)
 

@@ -19,13 +19,18 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from langchain_core.documents import Document
+
 from app.core.config import settings
 from app.domain.store import store
 from app.domain.timeline_store import timeline_store
 from app.domain.transcript_store import TranscriptSegment, transcript_store
 from app.functions.embedding.embedding_model import embedd_transcriptions
 from app.functions.geo.build_map import generate_map
-from app.functions.llm.event_extractor import extract_events_from_transcriptions
+from app.functions.llm.event_extractor import (
+    entities_from_metadata,
+    extract_events_from_transcriptions,
+)
 
 torch: Any = None
 whisperx: Any = None
@@ -183,14 +188,36 @@ async def _store_transcript(segments: list, session_id: str) -> None:
 
 
 async def _store_timeline_and_map(
-    texts: list[str], speakers: list[str], start_times: list[float], session_id: str
+    texts: list[str],
+    speakers: list[str],
+    start_times: list[float],
+    session_id: str,
+    saved_chunks: list[Document] | None = None,
 ) -> None:
     """Extract timeline events for this session and refresh its map.
 
+    Args:
+        texts: Transcribed text of each chunk.
+        speakers: Speaker of each chunk.
+        start_times: Start time of each chunk in seconds.
+        session_id: Session the chunks belong to.
+        saved_chunks: The chunks as saved in the database. Their entities were
+            already extracted at that point, so they are reused instead of
+            extracted again.
+
     Map generation failures are logged and ignored so transcription still returns.
     """
+    saved_entities = (
+        [entities_from_metadata(chunk.metadata) for chunk in saved_chunks]
+        if saved_chunks is not None
+        else None
+    )
     events = extract_events_from_transcriptions(
-        texts=texts, speakers=speakers, timestamps=start_times, session_id=session_id
+        texts=texts,
+        speakers=speakers,
+        timestamps=start_times,
+        session_id=session_id,
+        entities=saved_entities,
     )
     if not events:
         return
@@ -271,13 +298,13 @@ async def _transcribe_raw_session_audio(
 
         if texts:
             await _store_transcript(filtered_segments, session_id)
-            embedd_transcriptions(
+            saved_chunks = embedd_transcriptions(
                 embedding_text=texts,
                 speakers=speakers,
                 timestamps=start_times,
                 session_id=session_id,
             )
-            await _store_timeline_and_map(texts, speakers, start_times, session_id)
+            await _store_timeline_and_map(texts, speakers, start_times, session_id, saved_chunks)
 
         return filtered_segments
     finally:
@@ -444,14 +471,14 @@ async def transcribe_audio(
 
         if texts:
             await _store_transcript(filtered_segments, session_id)
-            embedd_transcriptions(
+            saved_chunks = embedd_transcriptions(
                 embedding_text=texts,
                 speakers=speakers,
                 timestamps=start_times,
                 session_id=session_id,
             )
 
-            await _store_timeline_and_map(texts, speakers, start_times, session_id)
+            await _store_timeline_and_map(texts, speakers, start_times, session_id, saved_chunks)
 
         return filtered_segments
 
