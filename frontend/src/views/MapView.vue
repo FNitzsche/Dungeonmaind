@@ -429,7 +429,11 @@ watch(
         v-if="mapStore.dataSource === 'timeline' && mapStore.apiStatus === 'down'"
         class="info-banner"
       >
-        Map API unavailable. Showing places inferred from timeline events.
+        {{
+          mapStore.nodeCount > 0
+            ? 'Map API unavailable. Showing places inferred from timeline events.'
+            : 'Map API unavailable. There are no places in the timeline to show yet.'
+        }}
       </p>
 
       <div v-if="errorMessage" class="error-banner">

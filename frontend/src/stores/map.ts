@@ -83,13 +83,7 @@ export const useMapStore = defineStore('map', () => {
       nodes.value = fallback.nodes
       edges.value = fallback.edges
       dataSource.value = 'timeline'
-
-      if (fallback.nodes.length === 0) {
-        error.value =
-          message.includes('404') || message.includes('HTTP 404')
-            ? null
-            : `Map API unavailable — showing timeline places when available. (${message})`
-      }
+      // No error text here: apiStatus 'down' already makes the map page say the API is unavailable.
     } finally {
       loading.value = false
     }

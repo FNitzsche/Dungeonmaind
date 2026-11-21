@@ -6,6 +6,8 @@ import { useMapStore } from '@/stores/map'
 import { useSessionStore } from '@/stores/session'
 import { useTimelineStore } from '@/stores/timeline'
 import * as timelineApi from '@/api/timelineAPI'
+import * as mapApi from '@/api/mapAPI'
+import type { TimelineEventOut } from '@/api/timelineAPI'
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: {} }),
@@ -114,5 +116,57 @@ describe('MapView errors', () => {
     await flushPromises()
 
     expect(wrapper.find('.error-banner').text()).toContain('Ollama is not running')
+  })
+})
+
+describe('MapView when the map API is down', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.mocked(mapApi.getMap).mockRejectedValue(new TypeError('Failed to fetch'))
+  })
+
+  async function mountWithTimeline(events: Partial<TimelineEventOut>[]) {
+    vi.mocked(timelineApi.listEvents).mockResolvedValue({
+      session_id: 'unsaved',
+      events: events as TimelineEventOut[],
+      total: events.length,
+    })
+    const wrapper = mount(MapView, { global: { stubs: { MapEditPanel: true } } })
+    await flushPromises()
+    return wrapper
+  }
+
+  function mentionsOfOutage(wrapper: Awaited<ReturnType<typeof mountWithTimeline>>) {
+    return wrapper.text().match(/API unavailable/gi)?.length ?? 0
+  }
+
+  it('says so once, not in two banners, when there are no places to show', async () => {
+    const wrapper = await mountWithTimeline([])
+
+    expect(mentionsOfOutage(wrapper)).toBe(1)
+    expect(wrapper.find('.error-banner').exists()).toBe(false)
+  })
+
+  it('does not claim to show timeline places when there are none', async () => {
+    const wrapper = await mountWithTimeline([])
+
+    expect(wrapper.text()).not.toContain('Showing places inferred')
+  })
+
+  it('says it is showing places from the timeline when there are some', async () => {
+    const wrapper = await mountWithTimeline([
+      {
+        id: 'e1',
+        title: 'Arrival',
+        description: 'Reached Neverwinter.',
+        event_type: 'travel',
+        location_entities: ['Neverwinter'],
+        temporal_entities: [],
+        characters: [],
+      },
+    ])
+
+    expect(wrapper.text()).toContain('Showing places inferred from timeline events')
+    expect(mentionsOfOutage(wrapper)).toBe(1)
   })
 })
