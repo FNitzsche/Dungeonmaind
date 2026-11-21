@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.api.mappers.map_mapper import map_edge_to_out, map_location_to_out
 from app.api.mappers.timeline_mapper import timeline_event_to_out
 from app.api.routers.players import _require_leader
+from app.core.bus import bus
 from app.base_models.map_base_models import (
     MapConnectionRequest,
     MapDeleteResponse,
@@ -116,6 +117,15 @@ def _graph_response(
         locations=[map_location_to_out(location) for location in locations],
         edges=[map_edge_to_out(edge) for edge in edges],
     )
+
+
+async def _broadcast_map(
+    session_id: str, locations: list[MapLocation], edges: list[MapEdge]
+) -> MapGraphResponse:
+    """Return the graph and push it to every connected player browser."""
+    graph = _graph_response(session_id, locations, edges)
+    await bus.publish({'type': 'map_updated', **graph.model_dump(mode='json')})
+    return graph
 
 
 def _require_place(locations: list[MapLocation], location_id: str) -> MapLocation:
@@ -330,6 +340,7 @@ async def generate_session_map(
     """
     session_id = session_registry.resolve(req.session_id)
     locations, edges = await generate_map(session_id)
+    await _broadcast_map(session_id, locations, edges)
     return MapGenerateResponse(
         session_id=session_id,
         locations_generated=len(locations),
@@ -378,7 +389,7 @@ async def rename_map_location(
     _require_place(locations, req.location_id)
     record_rename(session_id, req.location_id, name)
     locations, edges = await _session_edges(session_id)
-    return _graph_response(session_id, locations, edges)
+    return await _broadcast_map(session_id, locations, edges)
 
 
 @router.post('/overrides/merge', response_model=MapGraphResponse)
@@ -398,7 +409,7 @@ async def merge_map_locations(
         _require_place(locations, source_id)
     record_merge(session_id, sources, req.target_location_id)
     locations, edges = await _session_edges(session_id)
-    return _graph_response(session_id, locations, edges)
+    return await _broadcast_map(session_id, locations, edges)
 
 
 @router.post('/overrides/split', response_model=MapGraphResponse)
@@ -424,7 +435,7 @@ async def split_map_location(
         event_ids=event_ids,
     )
     locations, edges = await _session_edges(session_id)
-    return _graph_response(session_id, locations, edges)
+    return await _broadcast_map(session_id, locations, edges)
 
 
 @router.post('/overrides/connect', response_model=MapGraphResponse)
@@ -446,7 +457,7 @@ async def connect_map_locations(
         req.relationship or 'travel',
     )
     locations, edges = await _session_edges(session_id)
-    return _graph_response(session_id, locations, edges)
+    return await _broadcast_map(session_id, locations, edges)
 
 
 @router.post('/overrides/disconnect', response_model=MapGraphResponse)
@@ -466,7 +477,7 @@ async def disconnect_map_locations(
         req.relationship,
     )
     locations, edges = await _session_edges(session_id)
-    return _graph_response(session_id, locations, edges)
+    return await _broadcast_map(session_id, locations, edges)
 
 
 @router.delete('', response_model=MapDeleteResponse)
@@ -484,4 +495,6 @@ async def delete_map(
     """
     session_id = session_registry.resolve(session_id)
     deleted = await map_store.clear_session(session_id)
+    locations, edges = await _session_edges(session_id)
+    await _broadcast_map(session_id, locations, edges)
     return MapDeleteResponse(deleted=deleted, session_id=session_id)
