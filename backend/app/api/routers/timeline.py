@@ -1,5 +1,7 @@
 """REST API router for timeline event management and generation."""
 
+import logging
+
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.api.mappers.timeline_mapper import timeline_event_to_out
@@ -13,10 +15,13 @@ from app.base_models.timeline_base_models import (
 from app.domain.session_state import session_registry
 from app.domain.timeline_store import timeline_store
 from app.functions.embedding.embedding_model import get_all_transcription_documents
+from app.functions.geo.build_map import generate_map
 from app.functions.llm.event_extractor import (
     build_timeline_events_from_transcription_documents,
     extract_events_from_transcriptions,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -125,6 +130,14 @@ async def generate_events(req: TimelineGenerateRequest) -> TimelineGenerateRespo
 
     await timeline_store.clear_session(session_id)
     added = await timeline_store.add_events(events)
+
+    # Keep the saved map in step with the new events, otherwise a map saved
+    # earlier would keep serving places from the old timeline. The events are
+    # already stored, so a map failure is logged and must not fail this call.
+    try:
+        await generate_map(session_id)
+    except Exception:
+        logger.warning('Could not rebuild the map for session %s', session_id, exc_info=True)
 
     return TimelineGenerateResponse(
         session_id=session_id,
