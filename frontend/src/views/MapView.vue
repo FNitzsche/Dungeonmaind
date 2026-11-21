@@ -312,6 +312,9 @@ const generateLabel = computed(() => {
   return mapStore.nodeCount > 0 ? 'Regenerate map' : 'Generate map'
 })
 
+// Generate Events can fail too, so the banner shows the problem from either store.
+const errorMessage = computed(() => mapStore.error ?? timelineStore.error)
+
 // Same two steps as the timeline page: new events first, then the map built from them.
 async function handleGenerateEvents() {
   const response = await timelineStore.generateEvents(sessionStore.sessionId)
@@ -429,8 +432,8 @@ watch(
         Map API unavailable. Showing places inferred from timeline events.
       </p>
 
-      <div v-if="mapStore.error" class="error-banner">
-        {{ mapStore.error }}
+      <div v-if="errorMessage" class="error-banner">
+        {{ errorMessage }}
       </div>
 
       <div v-if="mapStore.loading" class="loading">Loading map...</div>

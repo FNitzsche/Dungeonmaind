@@ -5,6 +5,7 @@ import TimelineView from '@/views/TimelineView.vue'
 import { useMapStore } from '@/stores/map'
 import { useSessionStore } from '@/stores/session'
 import { useTimelineStore } from '@/stores/timeline'
+import * as mapApi from '@/api/mapAPI'
 import type { TimelineEventOut } from '@/api/timelineAPI'
 
 vi.mock('vue-router', () => ({
@@ -81,5 +82,21 @@ describe('TimelineView Generate Map button', () => {
     const wrapper = await mountTimeline({ leader: true, events: [] })
 
     expect(buttonNamed(wrapper, /^generate map$/i)?.attributes('disabled')).toBeDefined()
+  })
+})
+
+describe('TimelineView errors', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('shows why Generate Map failed', async () => {
+    vi.mocked(mapApi.generateMap).mockRejectedValue(new Error('Map service is down'))
+    const wrapper = await mountTimeline({ leader: true, events: [EVENT] })
+
+    await buttonNamed(wrapper, /^generate map$/i)?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.error-banner').text()).toContain('Map service is down')
   })
 })

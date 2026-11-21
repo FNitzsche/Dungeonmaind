@@ -5,6 +5,7 @@ import MapView from '@/views/MapView.vue'
 import { useMapStore } from '@/stores/map'
 import { useSessionStore } from '@/stores/session'
 import { useTimelineStore } from '@/stores/timeline'
+import * as timelineApi from '@/api/timelineAPI'
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: {} }),
@@ -19,6 +20,7 @@ vi.mock('@/api/mapAPI', () => ({
 
 vi.mock('@/api/timelineAPI', () => ({
   listEvents: vi.fn(),
+  generateEvents: vi.fn(),
 }))
 
 async function mountAsLeader(places: string[]) {
@@ -96,5 +98,21 @@ describe('MapView Generate Events button', () => {
     await flushPromises()
 
     expect(mapStore.generateMap).not.toHaveBeenCalled()
+  })
+})
+
+describe('MapView errors', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('shows why Generate Events failed', async () => {
+    vi.mocked(timelineApi.generateEvents).mockRejectedValue(new Error('Ollama is not running'))
+    const wrapper = await mountAsLeader(['Neverwinter'])
+
+    await buttonNamed(wrapper, /^generate events$/i)?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.error-banner').text()).toContain('Ollama is not running')
   })
 })

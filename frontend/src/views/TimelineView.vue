@@ -104,6 +104,9 @@ async function handleGenerate() {
   }
 }
 
+// Generate Map can fail too, so the banner shows the problem from either store.
+const errorMessage = computed(() => timelineStore.error ?? mapStore.error)
+
 async function handleGenerateMap() {
   await mapStore.generateMap(sessionStore.sessionId)
 }
@@ -218,8 +221,8 @@ watch(
         </div>
       </header>
 
-      <div v-if="timelineStore.error" class="error-banner">
-        {{ timelineStore.error }}
+      <div v-if="errorMessage" class="error-banner">
+        {{ errorMessage }}
       </div>
 
       <div v-if="timelineStore.loading" class="loading">Loading events...</div>
