@@ -222,7 +222,7 @@ async def _require_leader(
         candidate_ids.append(actor_id)
     if x_player_id:
         with contextlib.suppress(ValueError):
-            candidate_ids.append(UUID(x_player_id))
+            candidate_ids.append(UUID(x_player_id.strip()))
 
     players = await _get_all_players()
 
