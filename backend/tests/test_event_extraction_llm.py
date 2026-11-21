@@ -52,7 +52,7 @@ class ExtractEventsFromTextTests(unittest.TestCase):
             temporal_entities=['dawn'], location_entities=['Neverwinter', 'Triboar Trail']
         )
         patch = mock.patch.object(event_extractor, 'extract_entities_hybrid', return_value=entities)
-        patch.start()
+        self.hybrid = patch.start()
         self.addCleanup(patch.stop)
 
     def _extract(self, reply, **kwargs):
@@ -92,6 +92,20 @@ class ExtractEventsFromTextTests(unittest.TestCase):
         self.assertFalse(payload['stream'])
         self.assertEqual(payload['messages'][0]['role'], 'system')
         self.assertIn('We leave Neverwinter at dawn.', payload['messages'][1]['content'])
+
+    def test_provided_entities_skip_the_entity_extraction(self) -> None:
+        saved = ExtractedEntities(temporal_entities=['at dusk'], location_entities=['Silver Lake'])
+
+        events, _ = self._extract(_chat_reply(EVENTS_JSON), entities=saved)
+
+        self.hybrid.assert_not_called()
+        self.assertEqual(events[0].temporal_entities, ['at dusk'])
+        self.assertEqual(events[0].location_entities, ['Silver Lake'])
+
+    def test_entities_are_extracted_when_none_are_provided(self) -> None:
+        self._extract(_chat_reply(EVENTS_JSON))
+
+        self.hybrid.assert_called_once()
 
     def test_json_wrapped_in_prose_is_still_parsed(self) -> None:
         events, _ = self._extract(_chat_reply(f'Sure! Here are the events:\n{EVENTS_JSON}\nDone.'))
@@ -177,6 +191,56 @@ class ExtractEventsFromTranscriptionsTests(unittest.TestCase):
         self.assertIsNone(kwargs['speaker_name'])
         self.assertEqual(kwargs['chunk_start_time'], 0.0)
         self.assertEqual(kwargs['session_id'], 'default')
+
+    def test_each_chunk_gets_its_own_saved_entities(self) -> None:
+        saved = ExtractedEntities(temporal_entities=[], location_entities=['Silver Lake'])
+        with mock.patch.object(
+            event_extractor, 'extract_events_from_text', return_value=[]
+        ) as extract:
+            event_extractor.extract_events_from_transcriptions(
+                texts=['First.', 'Second.'], entities=[saved, None]
+            )
+
+        self.assertEqual(
+            [call.kwargs['entities'] for call in extract.call_args_list], [saved, None]
+        )
+
+    def test_entities_default_to_none_for_every_chunk(self) -> None:
+        with mock.patch.object(
+            event_extractor, 'extract_events_from_text', return_value=[]
+        ) as extract:
+            event_extractor.extract_events_from_transcriptions(texts=['First.', 'Second.'])
+
+        self.assertEqual([call.kwargs['entities'] for call in extract.call_args_list], [None, None])
+
+
+class EntitiesFromMetadataTests(unittest.TestCase):
+    def test_saved_comma_separated_entities_are_reused(self) -> None:
+        metadata = {
+            'temporal_entities': 'dawn, at dusk',
+            'location_entities': 'Neverwinter, Triboar Trail',
+        }
+
+        self.assertEqual(
+            event_extractor.entities_from_metadata(metadata),
+            ExtractedEntities(
+                temporal_entities=['dawn', 'at dusk'],
+                location_entities=['Neverwinter', 'Triboar Trail'],
+            ),
+        )
+
+    def test_empty_saved_entities_still_count_as_saved(self) -> None:
+        metadata = {'temporal_entities': '', 'location_entities': ''}
+
+        self.assertEqual(
+            event_extractor.entities_from_metadata(metadata),
+            ExtractedEntities(temporal_entities=[], location_entities=[]),
+        )
+
+    def test_missing_keys_mean_nothing_was_saved(self) -> None:
+        self.assertIsNone(event_extractor.entities_from_metadata({}))
+        self.assertIsNone(event_extractor.entities_from_metadata({'location_entities': 'A'}))
+        self.assertIsNone(event_extractor.entities_from_metadata({'temporal_entities': 'dawn'}))
 
 
 if __name__ == '__main__':

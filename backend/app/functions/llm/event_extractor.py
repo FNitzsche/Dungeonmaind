@@ -8,6 +8,7 @@ from urllib.request import Request, urlopen
 
 from app.domain.models import TimelineEvent, TimelineEventType
 from app.functions.embedding.entity_extractor import (
+    ExtractedEntities,
     _dedupe_preserving_order,
     extract_entities_hybrid,
 )
@@ -189,6 +190,30 @@ def _split_metadata_entities(value: Any) -> list[str]:
 
     return _dedupe_preserving_order(
         entity.strip() for entity in raw_entities if isinstance(entity, str) and entity.strip()
+    )
+
+
+def entities_from_metadata(metadata: Any) -> ExtractedEntities | None:
+    """Rebuild the entities saved with a transcription chunk, if there are any.
+
+    ``embedd_transcriptions`` stores the temporal and location entities of every
+    chunk in its metadata when the chunk is embedded, so they do not have to be
+    extracted again. Empty values still count as saved (nothing was found then).
+
+    Args:
+        metadata: The metadata dict of a transcription document.
+
+    Returns:
+        The saved entities, or None when the chunk was embedded without them and
+        has to be extracted again.
+    """
+    if not isinstance(metadata, dict):
+        return None
+    if 'temporal_entities' not in metadata or 'location_entities' not in metadata:
+        return None
+    return ExtractedEntities(
+        temporal_entities=_split_metadata_entities(metadata['temporal_entities']),
+        location_entities=_split_metadata_entities(metadata['location_entities']),
     )
 
 
@@ -406,9 +431,23 @@ def extract_events_from_text(
     chunk_start_time: float = 0.0,
     speaker_name: str | None = None,
     player_id: str | None = None,
+    entities: ExtractedEntities | None = None,
 ) -> list[TimelineEvent]:
-    """Extract timeline events from a single text chunk using an LLM."""
-    entities = extract_entities_hybrid(text)
+    """Extract timeline events from a single text chunk using an LLM.
+
+    Args:
+        text: The transcript chunk.
+        session_id: Session the events belong to.
+        chunk_index: Position of the chunk, used for event order.
+        chunk_start_time: Start time of the chunk in seconds.
+        speaker_name: Speaker of the chunk, if known.
+        player_id: Player id of the speaker, if known.
+        entities: Entities already extracted for this text (e.g. saved when the
+            chunk was embedded). When omitted they are extracted here, which
+            costs an extra LLM call per chunk.
+    """
+    if entities is None:
+        entities = extract_entities_hybrid(text)
 
     if not text.strip():
         return []
@@ -490,8 +529,13 @@ def extract_events_from_transcriptions(
     session_id: str = 'default',
     *,
     chunk_start_times: list[float] | None = None,
+    entities: list[ExtractedEntities | None] | None = None,
 ) -> list[TimelineEvent]:
-    """Extract timeline events from multiple transcription texts."""
+    """Extract timeline events from multiple transcription texts.
+
+    ``entities`` lines up with ``texts`` by position; a None entry (or a missing
+    list) means that chunk's entities are extracted while its events are.
+    """
     times = timestamps if timestamps is not None else chunk_start_times
     all_events: list[TimelineEvent] = []
     for i, text in enumerate(texts):
@@ -499,6 +543,7 @@ def extract_events_from_transcriptions(
             continue
         speaker = speakers[i] if speakers and i < len(speakers) else None
         chunk_time = float(times[i]) if times is not None and i < len(times) else 0.0
+        chunk_entities = entities[i] if entities and i < len(entities) else None
         all_events.extend(
             extract_events_from_text(
                 text=text,
@@ -506,6 +551,7 @@ def extract_events_from_transcriptions(
                 chunk_index=i,
                 chunk_start_time=chunk_time,
                 speaker_name=speaker,
+                entities=chunk_entities,
             )
         )
     return all_events
