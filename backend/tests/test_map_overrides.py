@@ -541,6 +541,28 @@ class MapOverridesRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(visible.status_code, 200)
         self.assertEqual(visible.json()['locations'][0]['canonical_name'], 'Velmora Crossing')
 
+    async def test_inactive_leader_can_still_edit_the_map(self) -> None:
+        from app.domain.models import PlayerStatus
+
+        self.leader.status = PlayerStatus.inactive
+
+        generate = await self._post('/map/generate', json={'session_id': 'sess-overrides'})
+        self.assertEqual(generate.status_code, 200)
+
+        rename = await self._post(
+            '/map/overrides/rename',
+            json={
+                'session_id': 'sess-overrides',
+                'location_id': 'loc_1',
+                'canonical_name': 'Still The Leader',
+            },
+        )
+        self.assertEqual(rename.status_code, 200)
+
+        self.leader.status = PlayerStatus.kicked
+        kicked = await self._post('/map/generate', json={'session_id': 'sess-overrides'})
+        self.assertEqual(kicked.status_code, 403)
+
 
 if __name__ == '__main__':
     unittest.main()
