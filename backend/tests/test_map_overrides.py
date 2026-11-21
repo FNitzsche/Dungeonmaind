@@ -541,6 +541,35 @@ class MapOverridesRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(visible.status_code, 200)
         self.assertEqual(visible.json()['locations'][0]['canonical_name'], 'Velmora Crossing')
 
+    async def test_generate_and_rename_broadcast_the_map_over_the_player_socket(self) -> None:
+        from unittest.mock import patch
+
+        published: list[dict] = []
+
+        async def capture(event: dict) -> None:
+            published.append(event)
+
+        with patch('app.api.routers.map.bus.publish', side_effect=capture):
+            generate = await self._post('/map/generate', json={'session_id': 'sess-overrides'})
+            rename = await self._post(
+                '/map/overrides/rename',
+                json={
+                    'session_id': 'sess-overrides',
+                    'location_id': 'loc_1',
+                    'canonical_name': 'The Crossing',
+                },
+            )
+
+        self.assertEqual(generate.status_code, 200)
+        self.assertEqual(rename.status_code, 200)
+        self.assertEqual([item.get('type') for item in published], ['map_updated', 'map_updated'])
+        self.assertEqual(published[0]['session_id'], 'sess-overrides')
+        self.assertEqual(
+            [item['canonical_name'] for item in published[0]['locations']],
+            ['Velmora Crossing', 'Silver Lake'],
+        )
+        self.assertEqual(published[1]['locations'][0]['canonical_name'], 'The Crossing')
+
     async def test_inactive_leader_can_still_edit_the_map(self) -> None:
         from app.domain.models import PlayerStatus
 
