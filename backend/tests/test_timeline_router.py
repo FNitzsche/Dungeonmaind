@@ -8,8 +8,10 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from app.api.routers import timeline as timeline_router_module
+from app.domain.map_store import map_store
 from app.domain.models import TimelineEvent, TimelineEventType
 from app.domain.timeline_store import timeline_store
+from app.functions.geo.build_map import generate_map
 
 SESSION_ID = 'Lost Mine/Session_1'
 OTHER_SESSION_ID = 'Lost Mine/Session_2'
@@ -40,12 +42,14 @@ class TimelineRouterTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         await timeline_store.clear_session(SESSION_ID)
         await timeline_store.clear_session(OTHER_SESSION_ID)
+        await map_store.clear_session(SESSION_ID)
         self.client = AsyncClient(transport=ASGITransport(app=_app()), base_url='http://test')
         self.addAsyncCleanup(self.client.aclose)
 
     async def asyncTearDown(self) -> None:
         await timeline_store.clear_session(SESSION_ID)
         await timeline_store.clear_session(OTHER_SESSION_ID)
+        await map_store.clear_session(SESSION_ID)
 
     async def _list(self, session_id: str = SESSION_ID) -> dict:
         res = await self.client.get('/timeline/events', params={'session_id': session_id})
@@ -224,6 +228,42 @@ class TimelineRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual([event['title'] for event in (await self._list())['events']], ['Arrival'])
         self.assertEqual(len((await self._list(OTHER_SESSION_ID))['events']), 1)
+
+    async def test_generate_rebuilds_a_previously_saved_map(self) -> None:
+        # A map was saved earlier, from a timeline that named two places...
+        await timeline_store.add_events(
+            [
+                _event('a', 0, location_entities=['Velmora Crossing']),
+                _event('b', 1, location_entities=['Silver Lake']),
+            ]
+        )
+        await generate_map(SESSION_ID)
+        # ...then the timeline is regenerated and now also names a third place.
+        regenerated = [
+            _event('', 0, location_entities=['Velmora Crossing']),
+            _event('', 1, location_entities=['Silver Lake']),
+            _event('', 2, location_entities=['Kharzul Ridge']),
+        ]
+        with (
+            mock.patch.object(
+                timeline_router_module,
+                'get_all_transcription_documents',
+                return_value=[_doc('We reach Kharzul Ridge.', player_id='DM')],
+            ),
+            mock.patch.object(
+                timeline_router_module,
+                'extract_events_from_transcriptions',
+                return_value=regenerated,
+            ),
+        ):
+            res = await self.client.post('/timeline/generate', json={'session_id': SESSION_ID})
+
+        self.assertEqual(res.status_code, 200)
+        saved = await map_store.get_locations(SESSION_ID)
+        self.assertEqual(
+            sorted(location.canonical_name for location in saved or []),
+            ['Kharzul Ridge', 'Silver Lake', 'Velmora Crossing'],
+        )
 
 
 if __name__ == '__main__':
