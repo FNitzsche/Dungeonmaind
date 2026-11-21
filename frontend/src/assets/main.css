@@ -1,41 +1,30 @@
 @import './base.css';
 
+/*
+ * Application shell.
+ *
+ * Views own their own max-width and padding, so `#app` stays a plain
+ * full-width block. It previously carried the Vue starter-template layout
+ * (`display: grid; grid-template-columns: 1fr 1fr` above 1300px, plus
+ * `body { display: flex; place-items: center }`), which squeezed every
+ * single-child view into one 556px half-width column.
+ */
 #app {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
+  width: 100%;
+  min-height: 100vh;
   font-weight: normal;
 }
 
-a,
-.green {
+a {
+  color: var(--dm-link);
   text-decoration: none;
-  color: hsla(160, 100%, 37%, 1);
-  transition: 0.4s;
-  padding: 3px;
+  border-radius: var(--dm-radius-xs);
+  transition: color var(--dm-transition);
 }
 
 @media (hover: hover) {
   a:hover {
-    background-color: hsla(160, 100%, 37%, 0.2);
-  }
-}
-
-@media (min-width: 1300px) {
-  body {
-    display: flex;
-    place-items: center;
-  }
-
-  #app {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    padding: 0 2rem;
-  }
-}
-
-@media (max-width: 600px) {
-  #app {
-    padding: 0.25rem;
+    color: var(--dm-link-hover);
+    text-decoration: underline;
   }
 }

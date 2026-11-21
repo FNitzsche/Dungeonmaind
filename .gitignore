@@ -2,7 +2,21 @@
 
 **/.idea/
 **/.venv/
+**/.venv311/
+**/.venv312/
 **/.env.txt
 
 **/backend/data/chroma_db/
 **/backend/data/SavedSessions/
+
+# mkdocs build output
+site/
+
+# Playwright MCP screenshots / snapshots
+.playwright-mcp/
+
+# system / user nonsense
+~/
+.project_flow.md
+
+.env

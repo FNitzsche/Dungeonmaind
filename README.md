@@ -8,14 +8,99 @@ All processing is performed locally. No audio, transcripts, or campaign data are
 
 ---
 
+## Quick Start — Docker (recommended)
+
+### Prerequisites
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (includes Compose)
+- Git
+- (Optional) NVIDIA GPU + Docker GPU support for faster transcription
+
+### 1. Clone and prepare env
+```bash
+git clone https://github.com/FNitzsche/Dungeonmaind.git
+cd Dungeonmaind
+cp backend/.env.example backend/.env
+# Optional: set HF_TOKEN (diarization) or OLLAMA_API_KEY in backend/.env
+```
+
+### 2. Start the full stack
+```bash
+docker compose up --build
+```
+Starts **frontend**, **backend**, and **Ollama** together. First build can take a while (WhisperX / embedding models download in the backend image).
+
+### 3. Open and use
+- Frontend: **http://localhost:5173**
+- Backend API: **http://localhost:8000**
+- Ollama: **http://localhost:11434**
+- Click **Check/Set Connection** (default URL `http://localhost:8000`).
+- Click **Join as new Player** → choose **Leader** (only on localhost) → enter your local network IP and name → **Join**.
+- Record a session, then ask questions or visit **/timeline** to see generated events.
+
+### Useful Compose commands
+```bash
+docker compose up --build -d   # detached
+docker compose logs -f         # follow logs
+docker compose down            # stop
+```
+
+---
+
+## Alternative: local install (without Docker)
+
+### Prerequisites
+- Python 3.12, Node.js (LTS), ffmpeg (on PATH), Git, Ollama
+- (Optional) NVIDIA GPU with CUDA 12.8+ for faster transcription
+
+### Setup and start
+```bash
+python -m venv .venv && source .venv/bin/activate   # Windows: .\.venv\Scripts\Activate.ps1
+pip install -r backend/requirements.txt
+cp backend/.env.example backend/.env
+cd frontend && npm install && cd ..
+ollama serve
+# In another terminal:
+ollama pull hf.co/bartowski/mistralai_Ministral-3-3B-Instruct-2512-GGUF:Q5_K_M
+
+# Then start backend + frontend together:
+# macOS / Linux:  chmod +x start.sh && ./start.sh
+# Windows:        .\start.ps1
+```
+
+---
+
+## Documentation Site (MkDocs)
+
+The project has a documentation site built with [MkDocs](https://www.mkdocs.org) (Material theme). It includes auto-generated API reference from docstrings, architecture diagrams, and guides.
+
+### First-time setup
+```bash
+pip install mkdocs mkdocs-material "mkdocstrings[python]" pymdown-extensions
+```
+
+### Serve locally
+```bash
+# From the project root
+mkdocs serve
+# Open http://localhost:8000
+```
+
+### Build static site
+```bash
+mkdocs build
+# Output in site/ directory
+```
+
+---
+
 ## Project Goal
 
 > DnD campaigns often span many sessions, making it difficult to remember details from past campaigns.
 
 Dungeon M-AI-nd addresses this problem by:
-1. Recording spoken audio during a session  
-2. Transcribing it automatically  
-3. Making the content searchable and queryable  
+1. Recording spoken audio during a session
+2. Transcribing it automatically
+3. Making the content searchable and queryable
 
 This allows players to retrieve accurate information based on **real session dialogue**, not summaries or manual notes. The goal is to efficiently record your DnD sessions and to make them searchable. Players are be able to ask questions like:
 
@@ -41,7 +126,7 @@ and receive accurate answers based on real transcriptions of their sessions.
 
 ## System Overview
 
-🎙️ Recording → 🧠 Transcription (WhisperX) 
+🎙️ Recording → 🧠 Transcription (WhisperX)
 → 🧩 Embedding → 💾 Storage → 🤖 Q&A via LLM
 
 ---
@@ -54,7 +139,7 @@ and receive accurate answers based on real transcriptions of their sessions.
 - Node.js
 - ffmpeg (for WhisperX) - very important!
 - (Optional but recommended) GPU with CUDA for accelerated transcription by WhisperX and answer-	response times by the llm
-  
+
 ### 1. Clone the repository
 	```text
 	git clone https://github.com/FNitzsche/Dungeonmaind.git
@@ -67,9 +152,9 @@ and receive accurate answers based on real transcriptions of their sessions.
 	```
 For GPU support you need to install CUDA (CUDA Toolkit 12.8.1), cuDNN (cuDNN 9.10.2), ctranslate2 (4.6.0) and:
 	```text
-	
+
 	pip uninstall torch torchaudio
-	
+
 	pip install torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128
 	```
 
@@ -136,7 +221,7 @@ See the README.md file in the 'frontend' folder. (first run ```npm install```, t
 ### Stopping the Recording
 1. Click Stop Recording when the session ends.
 2. The recording timer stops and the final audio segment is sent to the backend.
-3. A status message soon appears indicating the audio transcription is in progress. 
+3. A status message soon appears indicating the audio transcription is in progress.
 4. The backend eventually completes final transcription, alignment, and speaker labeling.
 5. Once final processing is complete, the session is now ready for playback, querying, and export.
 

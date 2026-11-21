@@ -1,4 +1,6 @@
+/** Application entry point – bootstraps Vue, Pinia, and the router. */
 import './assets/main.css'
+import './assets/styles.css'
 
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'

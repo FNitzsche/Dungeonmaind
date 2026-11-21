@@ -9,7 +9,7 @@ services:
     depends_on:
       - backend
     environment:
-      - VITE_BACKEND_URL=http://backend:8000
+      # Browser uses host-published ports (localhost:8000), not the Docker DNS name
       - VITE_DOCKER_MODE=true
     volumes:
       - ./frontend:/app
@@ -27,12 +27,11 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - OLLAMA_URL=http://ollama:11434
-      #- CHROMA_DB_PATH=/app/data/chroma_db
     volumes:
       - ./backend:/app
-      #- ./backend/data/chroma_db:/app/data/chroma_db
+      - chroma_volume:/app/data/chroma_db
     env_file:
-        - ./backend/.env
+      - ./backend/.env
     command: >
       uvicorn app.main:app
       --host 0.0.0.0

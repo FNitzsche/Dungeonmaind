@@ -1,4 +1,7 @@
 <script setup lang="ts">
+/**
+ * DiceWidget – a simple dice-rolling widget supporting W4, W6, W8, W12, and W20.
+ */
 import { ref } from 'vue'
 import { useSessionStore } from '@/stores/session.ts'
 
@@ -30,7 +33,6 @@ function rollDice(sides: number) {
   </div>
 </template>
 
-<style src="@/assets/styles.css"></style>
 <style scoped>
 /* Dice */
 .dice-widget {
@@ -43,24 +45,25 @@ function rollDice(sides: number) {
   margin-top: -20px;
 }
 
+/*
+ * A fixed 3-column grid. With `flex: 1 0 30%` the trailing row stretched its
+ * two buttons to fill the width, so W12/W20 rendered much wider than W4/W6/W8.
+ */
 .dice-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  column-gap: 0.5rem;
-  row-gap: 0rem;
-  justify-content: center;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--dm-space-2);
 }
 
-
 .dice-button {
-  flex: 1 0 30%;
-  padding: 0.75rem;
+  margin-bottom: 0;
+  padding: var(--dm-space-3);
   font-size: 1.15rem;
   text-align: center;
 }
 
 .dice-result {
-  margin-top: 1rem;
+  margin-top: var(--dm-space-4);
   text-align: center;
   font-weight: bold;
 }

@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, onBeforeUnmount, ref } from 'vue'
+/**
+ * HomeView – the main game dashboard. Renders questions, recording,
+ * audio upload, and the right rail (dice, abilities, join link).
+ * Player presence stays open in App.vue so Map/Timeline keep the socket.
+ */
+import { onMounted } from 'vue'
 import { useSessionStore } from '@/stores/session.ts'
 import { useRouter } from 'vue-router'
-import { SERVER_CONFIG } from '@/config/config'
 import HomeHeader from '@/views/HomeView/HomeHeader.vue'
 import SessionOverview from '@/views/HomeView/SessionOverview.vue'
 import QuestionSection from '@/views/HomeView/QuestionSection.vue'
@@ -13,121 +17,10 @@ import RightRail from '@/views/HomeView/RightRail.vue'
 const router = useRouter()
 const store = useSessionStore()
 
-let socket: WebSocket | null = null;
-let manualClose = false;
-let connectionLost = false;
-
-function disconnectToLogin() {
-  manualClose = true;
-  try { socket?.close(1000, 'user acknowledged') } catch {}
-  socket = null;
-
-  store.forceLogout();
-  router.push({ name: 'login' });
-}
-
-function markConnectionLost(reason: string) {
-  if (connectionLost) return  // nur einmal auslösen
-  connectionLost = true;
-
-  //Socket schließen (triggert onclose), aber Modal bleibt
-  manualClose = true;
-  try { socket?.close(4000, 'connection lost') } catch {}
-  socket = null;
-
-  try {
-    window.confirm(`Verbindung zum Server unterbrochen.\n\n${reason}\n\nDu wirst jetzt zum Login weitergeleitet.`)
-  } finally {
-    disconnectToLogin();
-  }
-}
-
-function apiBase(): string {
-  return store.backendUrl ?? SERVER_CONFIG.BASE_URL
-}
-
-/** Build WS URL from HTTP base + path */
-function wsUrl(baseHttpUrl: string, path: string): string {
-  const u = new URL(baseHttpUrl)
-  u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:'
-  u.pathname = path.startsWith('/') ? path : `/${path}`
-  return u.toString()
-}
-
-/** WebSocket lifecycle */
 onMounted(() => {
-  // Guard: ohne Player -> zurück zum Login
-  const p = store.currentPlayer
-  if (!p) {
-    router.push({ name: 'login' })
-    return
+  if (!store.currentPlayer) {
+    void router.push({ name: 'login' })
   }
-
-  connectionLost = false;
-  manualClose = false;
-
-  // Use wsUrl() to ensure ws/wss scheme, then attach query params
-  const baseWs = wsUrl(apiBase(), SERVER_CONFIG.ENDPOINTS.WS_PLAYERS)
-  const url = new URL(baseWs)
-  url.search = new URLSearchParams({
-    player_id: p.id,
-    name: p.name,
-    role: p.role,
-  }).toString()
-
-  socket = new WebSocket(url.toString())
-
-  socket.onopen = async () => {
-    try {
-      await store.loadPlayers() // initial list
-    } catch (e) {
-      console.error('loadPlayers failed', e)
-    }
-  };
-
-  socket.onmessage = (ev) => {
-    let msg: any
-    try { msg = JSON.parse(ev.data) } catch { return }
-
-    if (msg.type === 'join') {
-      // centralized in store
-      store.applyWsJoin(msg.player)
-    } else if (msg.type === 'leave') {
-      store.applyWsLeave(msg.player_id)
-    } else if (msg.type === 'update' && msg.player?.id) {
-      // generic upsert path (expects full PlayerOut with nested hp)
-      store.applyWsUpdate(msg.player)
-    } else if (msg.type === 'health/update' && msg.hp) {
-      // backend now sends nested hp directly
-      store.patchPlayer(msg.player_id, { hp: msg.hp })
-    }
-  }
-
-  socket.onclose = (ev) => {
-    // 4001 = vom Server gekickt
-    if (ev.code === 4001) {
-      store.forceLogout();
-      router.push({ name: 'login' });
-      socket = null;
-      return
-    }
-    socket = null;
-
-    // Wenn nicht bewusst geschlossen, ist es "verbindung verloren"
-    if (!manualClose) {
-      markConnectionLost(`Websocket closed (code ${ev.code || 'n/a'})`)
-    }
-  };
-
-  socket.onerror = () => {
-    markConnectionLost('Websocket error')
-  }
-});
-
-onBeforeUnmount(() => {
-  manualClose = true;
-  try { socket?.close(1000, 'unmount') } catch {}
-  socket = null;
 })
 </script>
 
@@ -141,12 +34,12 @@ onBeforeUnmount(() => {
       <!-- Left: main LLM -->
       <QuestionSection />
 
-      <hr style="margin: 2rem 0" v-if="store.isLeader"/>
+      <hr style="margin: 2rem 0" v-if="store.isLeader" />
 
       <!-- Leader-only: recording -->
       <RecordingSection v-if="store.isLeader" />
 
-      <hr style="margin: 2rem 0" v-if="store.isLeader"/>
+      <hr style="margin: 2rem 0" v-if="store.isLeader" />
 
       <!-- Leader-only: upload -->
       <AudioUploadSection v-if="store.isLeader" />
@@ -156,26 +49,34 @@ onBeforeUnmount(() => {
   </div>
 </template>
 
-<style src="@/assets/styles.css"></style>
 <style scoped>
-/* Main container */
+/*
+ * Dashboard layout.
+ *
+ * Two real columns: the main content stack and the right rail. This used to
+ * depend on the global `#app` starter grid to push the content leftwards,
+ * while the rail escaped the flow with `position: fixed; right: 15%`. The
+ * columns are now declared here, so the two can never overlap.
+ *
+ * `.header` is `position: fixed`, so it is not a grid item.
+ */
 .container {
-  max-width: 600px;
-  margin: 2rem auto;
-  padding: 1rem;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  max-height: 90vh;
+  display: grid;
+  grid-template-columns: minmax(0, 600px) minmax(0, 540px);
+  justify-content: center;
+  align-items: start;
+  gap: var(--dm-space-6);
+  max-width: 1220px;
+  margin: var(--dm-space-6) auto;
+  padding: var(--dm-space-4);
   position: relative;
 }
 
 /* Centered content */
 .centered-content {
   background-color: rgba(163, 148, 95, 0.8);
-  padding: 2rem;
-  border-radius: 8px;
-  max-width: 600px;
+  padding: var(--dm-space-6);
+  border-radius: var(--dm-radius-sm);
   width: 100%;
   box-sizing: border-box;
   border: 1px solid rgba(255, 255, 255, 0.2);
@@ -183,13 +84,12 @@ onBeforeUnmount(() => {
   margin-top: 60px;
 }
 
-/* Responsive design */
-@media (max-width: 1200px) {
+/* Responsive design – collapse to a single column. */
+@media (max-width: 1300px) {
   .container {
+    grid-template-columns: minmax(0, 600px);
     max-width: 100%;
-    margin: 1rem;
-    align-items: center;
+    margin: var(--dm-space-4) auto;
   }
 }
-
 </style>

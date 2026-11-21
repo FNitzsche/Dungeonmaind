@@ -1,10 +1,10 @@
 <script setup lang="ts">
+/**
+ * SessionOverview – displays a greeting with the current player's name.
+ */
 import { useSessionStore } from '@/stores/session.ts'
 
-/** Holds Greeter */
-
 const store = useSessionStore()
-
 </script>
 
 <template>
@@ -13,7 +13,6 @@ const store = useSessionStore()
   </section>
 </template>
 
-<style src="@/assets/styles.css"></style>
 <style scoped>
 .hello-title {
   font-size: 1.9rem;

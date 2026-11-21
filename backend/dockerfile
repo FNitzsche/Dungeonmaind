@@ -12,9 +12,9 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application source code and environment file
+# Copy application source code; runtime secrets come from compose env_file
 COPY app ./app
-COPY .env .
+COPY .env.example .env
 
 # Download and cache embedding model into /models
 RUN mkdir -p /models && \

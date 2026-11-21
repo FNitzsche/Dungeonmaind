@@ -1,10 +1,16 @@
 <script setup lang="ts">
+/**
+ * HomeHeader – the top navigation bar showing the app title and
+ * leader-only buttons for config, rulebook, timeline, and session saving/exporting.
+ * Manages campaign/session selection, creation, and overwrite modals.
+ */
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { SERVER_CONFIG } from '@/config/config.ts'
 import { useSessionStore } from '@/stores/session.ts'
 import { useRecorderStore } from '@/stores/recorder.ts'
-import { useConfigStore } from "@/stores/backendConfig.ts";
-import { fetchConfig } from "@/api/backendConfigAPI.ts";
+import { useConfigStore } from '@/stores/backendConfig.ts'
+import { fetchConfig } from '@/api/backendConfigAPI.ts'
 import ConfigView from '@/views/ConfigView.vue'
 import RulebookView from '@/views/RulebookView.vue'
 
@@ -18,43 +24,51 @@ interface CampaignsWithSessions {
   campaigns: Record<string, SessionList>
 }
 
+const router = useRouter()
 const store = useSessionStore()
 const recorder = useRecorderStore()
 const configStore = useConfigStore()
 
+function goToTimeline() {
+  router.push({ name: 'timeline' })
+}
+
+function goToMap() {
+  router.push({ name: 'map' })
+}
+
 const showNameModal = ref(false)
-const sessionName = ref("")
+const sessionName = ref('')
 const showCampaignSelectModal = ref(false)
 const showCampaignCreateModal = ref(false)
 const campaigns = ref<CampaignsWithSessions | null>(null)
-const newCampaignName = ref("")
+const newCampaignName = ref('')
 const selectedCampaign = ref<string | null>(null)
 const selectedSession = ref<string | null>(null)
 const showOverwriteConfirm = ref(false)
 const showDeleteConfirm = ref(false)
-const deleteTargetLabel = ref("")
-const deleteTargetName = ref("")
+const deleteTargetLabel = ref('')
+const deleteTargetName = ref('')
 
 const showConfigModal = ref(false)
 const showRulebookModal = ref(false)
 
-
 const openConfig = async () => {
   try {
-    const config = await fetchConfig();
-    configStore.setConfig(config);
+    const config = await fetchConfig()
+    configStore.setConfig(config)
 
-    showConfigModal.value = true;
+    showConfigModal.value = true
   } catch (error) {
-    console.error('Failed to load config:', error);
+    console.error('Failed to load config:', error)
   }
-};
+}
 
 interface Campaign {
   name: string
 }
 
-function isValidFolderName(name : string) {
+function isValidFolderName(name: string) {
   const regex = /^[A-Za-z0-9_-]+(?: [A-Za-z0-9_-]+)*$/
   return regex.test(name)
 }
@@ -102,7 +116,7 @@ function resetSelection() {
 function confirmSelection() {
   if (selectedSession.value) {
     // Overwrite Session by opening the "are you sure you want to overwrite ..." modal
-    console.log("Overwrite the session")
+    console.log('Overwrite the session')
     showOverwriteConfirm.value = true
   } else if (selectedCampaign.value) {
     // Create new session inside selected campaign by opening the Session name modal
@@ -113,7 +127,7 @@ function confirmSelection() {
 
 function getNewSessionName(campaignName: string) {
   const sessionCount = campaigns.value?.campaigns[campaignName]?.folders.length ?? 0
-  sessionName.value = "Session_" + (sessionCount+1).toString()
+  sessionName.value = 'Session_' + (sessionCount + 1).toString()
   showCampaignSelectModal.value = false
 }
 
@@ -125,9 +139,11 @@ function openCreateCampaign() {
 // Creates a new campaign
 async function createCampaign() {
   const name = newCampaignName.value.trim()
-  if (!name) return alert("Enter campaign name")
-  if(!isValidFolderName(name)) {
-      return alert("Campaign name is only allowed to have alpah-numeric values, whitespaces, '-' or '_'")
+  if (!name) return alert('Enter campaign name')
+  if (!isValidFolderName(name)) {
+    return alert(
+      "Campaign name is only allowed to have alpah-numeric values, whitespaces, '-' or '_'",
+    )
   }
 
   // The new campaign is at first only added locally with an empty session list
@@ -138,7 +154,7 @@ async function createCampaign() {
 
   // Check for duplicate campaign names
   if (campaigns.value.campaigns[name]) {
-    return alert("A campaign with this name already exists")
+    return alert('A campaign with this name already exists')
   }
 
   campaigns.value.campaigns[name] = { folders: [] }
@@ -146,7 +162,7 @@ async function createCampaign() {
   getNewSessionName(selectedCampaign.value)
 
   // Reset input and modals
-  newCampaignName.value = ""
+  newCampaignName.value = ''
   showCampaignCreateModal.value = false
   showCampaignSelectModal.value = false
   showNameModal.value = true
@@ -156,11 +172,13 @@ async function createCampaign() {
 async function onExport() {
   const name = sessionName.value.trim()
   const campaign = selectedCampaign.value
-  if (!name.trim()) return alert("Please enter a session name.")
-  if(!isValidFolderName(name)) {
-    return alert("Session name is only allowed to have alpah-numeric values, whitespaces, '-' or '_'")
+  if (!name.trim()) return alert('Please enter a session name.')
+  if (!isValidFolderName(name)) {
+    return alert(
+      "Session name is only allowed to have alpah-numeric values, whitespaces, '-' or '_'",
+    )
   }
-  if (!campaign) return alert("No campaign selected.")
+  if (!campaign) return alert('No campaign selected.')
   if (campaigns.value && campaigns.value.campaigns[campaign]) {
     const existingSessions = campaigns.value.campaigns[campaign].folders
     if (existingSessions.includes(name)) {
@@ -171,20 +189,27 @@ async function onExport() {
   showNameModal.value = false
 
   try {
-    await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.EXPORT_SESSION}`, {
+    const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.EXPORT_SESSION}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         campaign_name: selectedCampaign.value,
         session_name: sessionName.value,
+        // Where the transcript, timeline and map live until this save re-keys them
+        source_session_id: store.sessionId,
       }),
     })
+    if (!res.ok) {
+      throw new Error(`Save failed (${res.status})`)
+    }
+    store.setCampaignSession(campaign, name)
+    await store.refreshActiveSession()
   } catch (err) {
-    console.error(err);
+    console.error(err)
     if (err instanceof Error) {
-      alert("Saving/Exporting Session failed: " + err.message);
+      alert('Saving/Exporting Session failed: ' + err.message)
     } else {
-      alert("Saving/Exporting Session failed: " + String(err));
+      alert('Saving/Exporting Session failed: ' + String(err))
     }
   }
 }
@@ -193,8 +218,8 @@ async function confirmOverwrite() {
   const name = selectedSession.value
   const campaign = selectedCampaign.value
   // ISO-String has ':' in it, which causes a problem in the backend, when the name is interpreted as a path
-  const timestamp = new Date().toISOString().replace(/:/g, "-");
-  const overwriteName = name + "_" + timestamp
+  const timestamp = new Date().toISOString().replace(/:/g, '-')
+  const overwriteName = name + '_' + timestamp
   let overwriteSuccessful = false
   let savingSuccessful = false
   try {
@@ -209,53 +234,62 @@ async function confirmOverwrite() {
     })
     overwriteSuccessful = true
   } catch (err) {
-    console.error(err);
+    console.error(err)
     if (err instanceof Error) {
-      alert("Couldn't back up Session. Overwrite failed: " + err.message);
+      alert("Couldn't back up Session. Overwrite failed: " + err.message)
     } else {
-      alert("Couldn't back up Session failed. Overwrite failed: " + String(err));
+      alert("Couldn't back up Session failed. Overwrite failed: " + String(err))
     }
   }
 
-  if(overwriteSuccessful) {
+  if (overwriteSuccessful) {
     try {
-      await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.EXPORT_SESSION}`, {
+      const res = await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.EXPORT_SESSION}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           campaign_name: campaign,
           session_name: name,
+          source_session_id: store.sessionId,
         }),
       })
+      if (!res.ok) {
+        throw new Error(`Save failed (${res.status})`)
+      }
 
       savingSuccessful = true
+      if (campaign && name) store.setCampaignSession(campaign, name)
+      await store.refreshActiveSession()
     } catch (err) {
-      console.error(err);
+      console.error(err)
       if (err instanceof Error) {
-        alert("Overwriting Session failed, in trying to save new session: " + err.message);
+        alert('Overwriting Session failed, in trying to save new session: ' + err.message)
       } else {
-        alert("Overwriting Session failed, in trying to save new session: " + String(err));
+        alert('Overwriting Session failed, in trying to save new session: ' + String(err))
       }
     }
   } else {
-    alert("Overwrite failed");
+    alert('Overwrite failed')
     showOverwriteConfirm.value = false
     return
   }
 
-  if(savingSuccessful) {
+  if (savingSuccessful) {
     try {
-      await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.DELETE_SESSION_OR_CAMPAIGN}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ campaign_or_session_name: `${campaign}/${overwriteName}` }),
-      })
+      await fetch(
+        `${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.DELETE_SESSION_OR_CAMPAIGN}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ campaign_or_session_name: `${campaign}/${overwriteName}` }),
+        },
+      )
     } catch (err) {
-      console.error(err);
+      console.error(err)
       if (err instanceof Error) {
-        alert("Deletion of overwrite Session failed: " + err.message);
+        alert('Deletion of overwrite Session failed: ' + err.message)
       } else {
-        alert("Deletion of overwrite Session failed: " + String(err));
+        alert('Deletion of overwrite Session failed: ' + String(err))
       }
     }
   } else {
@@ -270,27 +304,38 @@ async function confirmOverwrite() {
         }),
       })
     } catch (err) {
-      console.error(err);
+      console.error(err)
       if (err instanceof Error) {
-        alert("Couldn't rename backup session. Backup Session does still exist though" + "under " + overwriteName + ": " + err.message);
+        alert(
+          "Couldn't rename backup session. Backup Session does still exist though" +
+            'under ' +
+            overwriteName +
+            ': ' +
+            err.message,
+        )
       } else {
-        alert("Couldn't rename backup session. Backup Session does still exist though" + "under " + overwriteName + ": " + String(err));
+        alert(
+          "Couldn't rename backup session. Backup Session does still exist though" +
+            'under ' +
+            overwriteName +
+            ': ' +
+            String(err),
+        )
       }
     }
-      alert("Overwrite failed");
-      showOverwriteConfirm.value = false
-      return
+    alert('Overwrite failed')
+    showOverwriteConfirm.value = false
+    return
   }
   showOverwriteConfirm.value = false
-
 }
 
 function openDeletePrompt() {
   if (selectedSession.value) {
-    deleteTargetLabel.value = "Session"
+    deleteTargetLabel.value = 'Session'
     deleteTargetName.value = selectedSession.value
   } else if (selectedCampaign.value) {
-    deleteTargetLabel.value = "Campaign"
+    deleteTargetLabel.value = 'Campaign'
     deleteTargetName.value = selectedCampaign.value
   } else {
     return
@@ -306,20 +351,20 @@ function confirmDelete() {
 }
 
 function cancelDelete() {
-  deleteTargetName.value = ""
-  deleteTargetLabel.value = ""
+  deleteTargetName.value = ''
+  deleteTargetLabel.value = ''
   showDeleteConfirm.value = false
 }
 
 function getSessionPerSelectedCampaign(): number {
   if (!campaigns.value || !selectedCampaign.value) {
-      return 0
+    return 0
   }
   const sessions = campaigns.value.campaigns[selectedCampaign.value]?.folders ?? []
   return sessions.length
 }
 
-function buildNameToDelete(deleteCampaignForSession : boolean) {
+function buildNameToDelete(deleteCampaignForSession: boolean) {
   if (!selectedCampaign.value) {
     return null
   }
@@ -327,7 +372,7 @@ function buildNameToDelete(deleteCampaignForSession : boolean) {
   if (!selectedSession.value) {
     return selectedCampaign.value
   } else {
-    if(deleteCampaignForSession) {
+    if (deleteCampaignForSession) {
       return selectedCampaign.value
     } else {
       return `${selectedCampaign.value}/${selectedSession.value}`
@@ -337,12 +382,12 @@ function buildNameToDelete(deleteCampaignForSession : boolean) {
 
 async function confirmDeletion() {
   try {
-    let nameToDelete = null;
-    if(deleteTargetLabel.value === "Session") {
+    let nameToDelete = null
+    if (deleteTargetLabel.value === 'Session') {
       const nrSessions = getSessionPerSelectedCampaign()
-      if(nrSessions == 1) {
+      if (nrSessions == 1) {
         nameToDelete = buildNameToDelete(true)
-        deleteTargetLabel.value = "Campaign"
+        deleteTargetLabel.value = 'Campaign'
       } else {
         nameToDelete = buildNameToDelete(false)
       }
@@ -351,7 +396,7 @@ async function confirmDeletion() {
     }
     console.log(nameToDelete)
     if (nameToDelete === null) {
-      alert("No campaign or session selected")
+      alert('No campaign or session selected')
       return
     }
     await fetch(`${SERVER_CONFIG.BASE_URL}${SERVER_CONFIG.ENDPOINTS.DELETE_SESSION_OR_CAMPAIGN}`, {
@@ -360,28 +405,25 @@ async function confirmDeletion() {
       body: JSON.stringify({ campaign_or_session_name: nameToDelete }),
     })
 
-    if(deleteTargetLabel.value === "Campaign") {
+    if (deleteTargetLabel.value === 'Campaign') {
       delete campaigns.value!.campaigns[selectedCampaign.value!]
       selectedCampaign.value = null
     } else {
       const sessionList = campaigns.value!.campaigns[selectedCampaign.value!].folders
       campaigns.value!.campaigns[selectedCampaign.value!] = {
-        folders: sessionList.filter(s => s !== selectedSession.value)
+        folders: sessionList.filter((s) => s !== selectedSession.value),
       }
       selectedSession.value = null
     }
-
   } catch (err) {
-    console.error(err);
+    console.error(err)
     if (err instanceof Error) {
-      alert("Deletion Campaign/Session failed: " + err.message);
+      alert('Deletion Campaign/Session failed: ' + err.message)
     } else {
-      alert("Deletion Campaign/Session failed: " + String(err));
+      alert('Deletion Campaign/Session failed: ' + String(err))
     }
   }
 }
-
-
 </script>
 
 <template>
@@ -390,27 +432,38 @@ async function confirmDeletion() {
     <h1>Dungeonmaind</h1>
     <div class="header-right">
       <button class="rulebook-button" @click="showRulebookModal = true">Rulebook</button>
+      <button type="button" class="timeline-button" @click="goToTimeline">Timeline</button>
+      <button type="button" class="map-button" @click="goToMap">Map</button>
       <button v-if="store.isLeader" class="config-button" @click="openConfig">Config</button>
       <button
         v-if="store.isLeader"
         class="export-button"
         @click="openSaveFlow"
-        :disabled="recorder.isRecording || recorder.isStopping || (!!recorder.recordedAudioURL && !recorder.canExportSession)"
+        :disabled="
+          recorder.isRecording ||
+          recorder.isStopping ||
+          (!!recorder.recordedAudioURL && !recorder.canExportSession)
+        "
       >
         Save Session
       </button>
-
     </div>
     <div v-if="showNameModal" class="modal-overlay">
       <div class="modal">
         <h2>Name your session</h2>
-        <input
-          v-model="sessionName"
-          placeholder="Enter session name"
-          class="modal-input"
-        />
+        <input v-model="sessionName" placeholder="Enter session name" class="modal-input" />
         <div class="modal-buttons">
-          <button class="btn-cancel" @click="showNameModal = false; deselectSessionAndCampaign()">Cancel</button>
+          <button
+            class="btn-cancel"
+            @click="
+              () => {
+                showNameModal = false
+                deselectSessionAndCampaign()
+              }
+            "
+          >
+            Cancel
+          </button>
           <button class="btn-save" @click="onExport">Save</button>
         </div>
       </div>
@@ -429,16 +482,23 @@ async function confirmDeletion() {
       <div class="session-list">
         <div v-if="campaigns && Object.keys(campaigns.campaigns).length">
           <div v-for="(sessionList, campaignName) in campaigns?.campaigns" :key="campaignName">
-            <h3 class="campaign-name"
-                @click="selectCampaign(campaignName)"
-                :class="{ selected: selectedCampaign  === campaignName }">
+            <h3
+              class="campaign-name"
+              @click="selectCampaign(campaignName)"
+              :class="{ selected: selectedCampaign === campaignName }"
+            >
               {{ campaignName }}
             </h3>
             <ul>
-              <li class="session-name-font"
-                  v-for="session in sessionList.folders" :key="session"
-                  :class="{ selected: selectedSession === session && selectedCampaign === campaignName }"
-                  @click="selectSession(session, campaignName)">
+              <li
+                class="session-name-font"
+                v-for="session in sessionList.folders"
+                :key="session"
+                :class="{
+                  selected: selectedSession === session && selectedCampaign === campaignName,
+                }"
+                @click="selectSession(session, campaignName)"
+              >
                 {{ session }}
               </li>
             </ul>
@@ -457,9 +517,7 @@ async function confirmDeletion() {
       </div>
 
       <div class="button-group">
-        <button class="btn-save" @click="openCreateCampaign">
-          Create new Campaign
-        </button>
+        <button class="btn-save" @click="openCreateCampaign">Create new Campaign</button>
       </div>
 
       <div class="button-group">
@@ -473,7 +531,15 @@ async function confirmDeletion() {
       </div>
 
       <div class="button-group">
-        <button class="btn-cancel" @click="showCampaignSelectModal = false; deselectSessionAndCampaign()">
+        <button
+          class="btn-cancel"
+          @click="
+            () => {
+              showCampaignSelectModal = false
+              deselectSessionAndCampaign()
+            }
+          "
+        >
           Cancel
         </button>
       </div>
@@ -483,66 +549,64 @@ async function confirmDeletion() {
     <div class="modal">
       <h2>Create New Campaign</h2>
 
-      <input
-        v-model="newCampaignName"
-        placeholder="Campaign name"
-        class="modal-input"
-      />
+      <input v-model="newCampaignName" placeholder="Campaign name" class="modal-input" />
 
       <div class="modal-buttons">
-        <button class="btn-cancel" @click="showCampaignCreateModal = false">
-          Cancel
-        </button>
-        <button class="btn-save" @click="createCampaign">
-          Create
-        </button>
+        <button class="btn-cancel" @click="showCampaignCreateModal = false">Cancel</button>
+        <button class="btn-save" @click="createCampaign">Create</button>
       </div>
     </div>
   </div>
 
   <div v-if="showDeleteConfirm" class="modal-overlay">
     <div class="modal">
-      <h2 style="font-family: 'MedievalSharp', cursive; color: black;">Confirm Deletion</h2>
+      <h2 style="font-family: 'MedievalSharp', cursive; color: black">Confirm Deletion</h2>
 
-      <p style="font-weight: bold; margin-bottom: 1rem; font-family: 'MedievalSharp', cursive; color: black;">
+      <p
+        style="
+          font-weight: bold;
+          margin-bottom: 1rem;
+          font-family: 'MedievalSharp', cursive;
+          color: black;
+        "
+      >
         Are you sure you want to delete
-        <span style="color: darkred;">
-          {{ deleteTargetLabel }} "{{ deleteTargetName }}"
-        </span>?
+        <span style="color: darkred"> {{ deleteTargetLabel }} "{{ deleteTargetName }}" </span>?
       </p>
 
       <div class="modal-buttons">
         <button class="btn-cancel" @click="cancelDelete">Cancel</button>
-        <button class="btn-save" style="background: darkred;" @click="confirmDelete">
-          Delete
-        </button>
+        <button class="btn-save" style="background: darkred" @click="confirmDelete">Delete</button>
       </div>
     </div>
   </div>
 
   <div v-if="showOverwriteConfirm" class="modal-overlay">
     <div class="modal">
-      <h2 style="font-family: 'MedievalSharp', cursive; color: black;">Confirm Overwrite</h2>
+      <h2 style="font-family: 'MedievalSharp', cursive; color: black">Confirm Overwrite</h2>
 
-      <p style="font-weight: bold; margin-bottom: 1rem; font-family: 'MedievalSharp', cursive; color: black;">
+      <p
+        style="
+          font-weight: bold;
+          margin-bottom: 1rem;
+          font-family: 'MedievalSharp', cursive;
+          color: black;
+        "
+      >
         Are you sure you want to overwrite
-        <span style="color: darkred;">
-          {{ selectedSession }}
-        </span>?
+        <span style="color: darkred"> {{ selectedSession }} </span>?
       </p>
 
       <div class="modal-buttons">
         <button class="btn-cancel" @click="showOverwriteConfirm = false">Cancel</button>
-        <button class="btn-save" style="background: darkred;" @click="confirmOverwrite">
+        <button class="btn-save" style="background: darkred" @click="confirmOverwrite">
           Overwrite
         </button>
       </div>
     </div>
   </div>
-
 </template>
 
-<style src="@/assets/styles.css"></style>
 <style scoped>
 /* Header */
 .header {
@@ -567,27 +631,41 @@ async function confirmDeletion() {
   gap: 0.5rem;
 }
 
+/* Header nav actions — match body primary (terracotta orange). */
 .rulebook-button,
+.timeline-button,
+.map-button,
 .config-button,
 .export-button {
-  padding: 0.5rem 1rem;
-  background-color: rgba(53, 73, 94, 0.9);
-  border: 1px solid #4a575e;
-  border-radius: 4px;
-  color: #fff;
+  padding: var(--dm-space-2) var(--dm-space-4);
+  background-color: var(--dm-primary);
+  border: 1px solid var(--dm-border-strong);
+  border-radius: var(--dm-radius-sm);
+  color: var(--dm-primary-ink);
   cursor: pointer;
-  font-family: 'MedievalSharp', cursive;
+  font-family: var(--dm-font-display);
   font-weight: normal;
-  transition: background-color 0.3s ease;
+  transition:
+    background-color var(--dm-transition),
+    border-color var(--dm-transition);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
 }
 
-.rulebook-button:hover,
-.config-button:hover,
-.export-button:hover {
-  background-color: #4a575e;
+.rulebook-button:hover:not(:disabled),
+.timeline-button:hover:not(:disabled),
+.map-button:hover:not(:disabled),
+.config-button:hover:not(:disabled),
+.export-button:hover:not(:disabled) {
+  background-color: var(--dm-primary-hover);
+  border-color: var(--dm-border-strong);
 }
 
 .rulebook-button:disabled,
+.timeline-button:disabled,
+.map-button:disabled,
 .config-button:disabled,
 .export-button:disabled {
   opacity: 0.7;
@@ -738,6 +816,6 @@ async function confirmDeletion() {
 }
 
 .session-name-font:hover {
-  background: rgba(0,0,0,0.1);
+  background: rgba(0, 0, 0, 0.1);
 }
 </style>

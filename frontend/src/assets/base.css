@@ -36,6 +36,71 @@
   --section-gap: 160px;
 }
 
+/*
+ * DungeonMind design tokens.
+ *
+ * These name the parchment palette that was previously hard-coded as hex
+ * literals across the views. The tokens are additive — existing literals
+ * still work, so components can migrate one at a time.
+ */
+:root {
+  /* Surfaces */
+  --dm-bg-deep: rgba(36, 25, 7, 0.95);
+  --dm-surface: rgba(163, 148, 95, 0.9);
+  --dm-surface-raised: rgba(178, 164, 113, 0.94);
+  --dm-surface-sunken: rgba(110, 97, 50, 0.7);
+  --dm-parchment: #f1e6b4;
+
+  /* Ink */
+  --dm-ink: #392401;
+  --dm-ink-soft: #5c4a24;
+  --dm-ink-muted: #695710;
+  --dm-ink-on-dark: #f1e6b4;
+
+  /* Lines */
+  --dm-border: rgba(105, 87, 16, 0.5);
+  --dm-border-strong: #695710;
+
+  /* Accents */
+  --dm-primary: #b74d30;
+  --dm-primary-hover: #9d3f26;
+  --dm-primary-ink: #fdf6e3;
+  --dm-secondary: #7e6f34;
+  --dm-secondary-hover: #695710;
+  --dm-danger: #8c2f1a;
+  --dm-focus: #3d6b8e;
+
+  --dm-link: #8b5a2b;
+  --dm-link-hover: #b74d30;
+
+  /* Radii */
+  --dm-radius-xs: 4px;
+  --dm-radius-sm: 6px;
+  --dm-radius-md: 10px;
+  --dm-radius-lg: 14px;
+  --dm-radius-pill: 999px;
+
+  /* Elevation */
+  --dm-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.15);
+  --dm-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.2);
+  --dm-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.3);
+
+  /* Spacing */
+  --dm-space-1: 0.25rem;
+  --dm-space-2: 0.5rem;
+  --dm-space-3: 0.75rem;
+  --dm-space-4: 1rem;
+  --dm-space-5: 1.5rem;
+  --dm-space-6: 2rem;
+
+  /* Motion */
+  --dm-transition: 0.2s ease;
+
+  /* Type */
+  --dm-font-display: 'MedievalSharp', 'Iowan Old Style', Georgia, serif;
+  --dm-font-body: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --color-background: var(--vt-c-black);

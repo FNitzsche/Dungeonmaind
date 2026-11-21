@@ -1,0 +1,155 @@
+"""REST API router for timeline event management and generation."""
+
+import logging
+
+from fastapi import APIRouter, HTTPException, Query, status
+
+from app.api.mappers.timeline_mapper import timeline_event_to_out
+from app.base_models.timeline_base_models import (
+    TimelineDeleteResponse,
+    TimelineEventListResponse,
+    TimelineEventOut,
+    TimelineGenerateRequest,
+    TimelineGenerateResponse,
+)
+from app.domain.session_state import session_registry
+from app.domain.timeline_store import timeline_store
+from app.functions.embedding.embedding_model import get_all_transcription_documents
+from app.functions.geo.build_map import generate_map
+from app.functions.llm.event_extractor import (
+    build_timeline_events_from_transcription_documents,
+    entities_from_metadata,
+    extract_events_from_transcriptions,
+)
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+@router.get('/events', response_model=TimelineEventListResponse)
+async def list_events(
+    session_id: str = Query('default', description='Session identifier'),
+) -> TimelineEventListResponse:
+    """List all timeline events for a given session.
+
+    Args:
+        session_id (str): Session identifier (default 'default').
+
+    Returns:
+        TimelineEventListResponse: TimelineEventListResponse with events and total count.
+    """
+    session_id = session_registry.resolve(session_id)
+    events = await timeline_store.get_session_events(session_id)
+    return TimelineEventListResponse(
+        session_id=session_id, events=[timeline_event_to_out(e) for e in events], total=len(events)
+    )
+
+
+@router.get('/events/{event_id}', response_model=TimelineEventOut)
+async def get_event(event_id: str) -> TimelineEventOut:
+    """Get a single timeline event by its ID.
+
+    Args:
+        event_id (str): The event identifier.
+
+    Returns:
+        TimelineEventOut: TimelineEventOut for the requested event.
+
+    Raises:
+        HTTPException 404: If the event is not found.
+    """
+    event = await timeline_store.get_event(event_id)
+    if event is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Event not found')
+    return timeline_event_to_out(event)
+
+
+@router.delete('/events/{event_id}', response_model=TimelineDeleteResponse)
+async def delete_event(event_id: str) -> TimelineDeleteResponse:
+    """Delete a single timeline event by its ID.
+
+    Args:
+        event_id (str): The event identifier.
+
+    Returns:
+        TimelineDeleteResponse: TimelineDeleteResponse indicating success.
+    """
+    deleted = await timeline_store.delete_event(event_id)
+    return TimelineDeleteResponse(deleted=deleted, event_id=event_id)
+
+
+@router.delete('/events', response_model=TimelineDeleteResponse)
+async def clear_session_events(
+    session_id: str = Query('default', description='Session identifier'),
+) -> TimelineDeleteResponse:
+    """Clear all timeline events for a given session.
+
+    Args:
+        session_id (str): Session identifier (default 'default').
+
+    Returns:
+        TimelineDeleteResponse: TimelineDeleteResponse indicating success.
+    """
+    await timeline_store.clear_session(session_registry.resolve(session_id))
+    return TimelineDeleteResponse(deleted=True, event_id=None)
+
+
+@router.post('/generate', response_model=TimelineGenerateResponse)
+async def generate_events(req: TimelineGenerateRequest) -> TimelineGenerateResponse:
+    """Generate timeline events from the transcriptions of one session.
+
+    Only transcription documents recorded in the requested session are used;
+    recordings of other sessions and campaigns never contribute.
+
+    Args:
+        req (TimelineGenerateRequest): TimelineGenerateRequest with session_id.
+
+    Returns:
+        TimelineGenerateResponse: TimelineGenerateResponse with the generated events.
+
+    Raises:
+        HTTPException 404: If no transcription documents are found.
+    """
+    session_id = session_registry.resolve(req.session_id)
+    docs = get_all_transcription_documents(session_id=session_id)
+    if not docs:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail='No transcription documents found for this session. '
+            'Record and transcribe audio first.',
+        )
+
+    texts = [doc.page_content for doc in docs]
+    speakers = [doc.metadata.get('player_id', 'unknown') for doc in docs]
+    timestamps = [float(doc.metadata.get('start_time', 0.0)) for doc in docs]
+    # Each chunk's entities were already extracted when it was embedded. Reuse
+    # them instead of asking the LLM again; chunks without them (None) are
+    # still extracted by the event extractor.
+    saved_entities = [entities_from_metadata(doc.metadata) for doc in docs]
+    events = extract_events_from_transcriptions(
+        texts=texts,
+        speakers=speakers,
+        timestamps=timestamps,
+        session_id=session_id,
+        entities=saved_entities,
+    )
+    if not events:
+        events = build_timeline_events_from_transcription_documents(docs, session_id=session_id)
+
+    await timeline_store.clear_session(session_id)
+    added = await timeline_store.add_events(events)
+
+    # Keep the saved map in step with the new events, otherwise a map saved
+    # earlier would keep serving places from the old timeline. The events are
+    # already stored, so a map failure is logged and must not fail this call.
+    try:
+        await generate_map(session_id)
+    except Exception:
+        logger.warning('Could not rebuild the map for session %s', session_id, exc_info=True)
+
+    return TimelineGenerateResponse(
+        session_id=session_id,
+        events_generated=len(added),
+        events=[timeline_event_to_out(e) for e in added],
+    )

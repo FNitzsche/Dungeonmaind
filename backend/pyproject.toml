@@ -1,0 +1,42 @@
+[tool.ruff]
+# Lint and format all Python files in the backend
+src = ["."]
+
+# Same as Prettier frontend config: 100 char width, no trailing commas on single-item tuples
+line-length = 100
+indent-width = 4
+target-version = "py312"
+
+[tool.ruff.lint]
+# Resolve isort/format conflict: don't split on trailing comma; the formatter handles this
+isort.split-on-trailing-comma = false
+
+# Pick rule categories that are widely used in industrial Python projects
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort (import sorting)
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "RUF", # ruff-specific rules
+    "SIM", # simplify expressions
+]
+ignore = [
+    "E501",   # line-length — we enforce via ruff formatter instead
+    "N802",   # allow function names with uppercase (FastAPI routers use snake_case handlers)
+    "N803",   # allow argument names with uppercase
+    "N806",   # allow variable names with uppercase
+    "N815",   # allow mixed-case class attributes
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]      # allow unused imports in __init__.py
+"tests/*.py"  = ["SIM"]       # allow less-simplified test code for clarity
+"**/transcribe_audio.py" = ["E402"]  # deliberate import ordering for lightning_fabric patch
+"**/test_entity_extraction.py" = ["E402"]  # sys.path.insert before app import
+
+[tool.ruff.format]
+# Match Prettier style: single quotes, no trailing commas
+quote-style = "single"
+skip-magic-trailing-comma = true

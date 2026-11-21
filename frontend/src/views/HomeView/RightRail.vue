@@ -1,8 +1,12 @@
 <script setup lang="ts">
+/**
+ * RightRail – the right-hand sidebar containing the join link,
+ * dice widget, and abilities/health section.
+ */
 import { useSessionStore } from '@/stores/session.ts'
 import DiceWidget from '../HomeView/DiceWidget.vue'
 import AbilitiesSection from '../HomeView/AbilitiesSection.vue'
-import JoinLink from "@/views/HomeView/JoinLink.vue";
+import JoinLink from '@/views/HomeView/JoinLink.vue'
 
 const store = useSessionStore()
 </script>
@@ -18,17 +22,24 @@ const store = useSessionStore()
   </aside>
 </template>
 
-<style src="@/assets/styles.css"></style>
 <style scoped>
-/* Right rail layout */
+/*
+ * Right rail layout.
+ *
+ * The rail is a real grid column in `HomeView`'s `.container` and sticks below
+ * the fixed header while the main column scrolls. It previously used
+ * `position: fixed; right: 15%`, which took it out of the flow and let it
+ * overlap the main content once the content was no longer pinned to the left
+ * half of the screen by the global starter grid.
+ */
 .right-rail {
-  position: fixed;
-  right: 15%;
-  width: 540px;
-  z-index: 900;
+  position: sticky;
+  top: 60px;
+  width: 100%;
+  max-height: calc(100vh - 70px);
   box-sizing: border-box;
-  color: #392401;
-  font-family: 'MedievalSharp', cursive;
+  color: var(--dm-ink);
+  font-family: var(--dm-font-display);
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: none;
@@ -39,41 +50,25 @@ const store = useSessionStore()
   display: none;
 }
 
-/* Leader-Version: füllt vertikal den Bildschirmbereich */
-.right-rail--leader {
-  top: 60px;
-  bottom: 5px;
-  padding-right: 0.5rem;
-}
-
-/* Player-Version: fixed */
+.right-rail--leader,
 .right-rail--member {
-  top: 60px;
-  bottom: 5px;
-  padding-right: 0.5rem;
+  padding-right: var(--dm-space-2);
 }
 
-/* Gemeinsames Layout innen: Cards untereinander mit Abstand */
+/* Cards stacked with even spacing. The offset aligns the first card with
+   `.centered-content`, which clears the fixed header. */
 .right-rail__inner {
-  padding-top: 100px;
+  margin-top: 60px;
   display: flex;
   flex-direction: column;
-  gap: 2rem;
+  gap: var(--dm-space-6);
 }
 
-/* Nur Leader: künstlicher Offset nach unten, damit die Box optisch nicht direkt unter dem Header klebt */
-.right-rail__inner--leader {
-  padding-top: 80px;
-}
-
-/* Responsive design */
+/* Responsive design – the rail becomes a normal block under the content. */
 @media (max-width: 1300px) {
   .right-rail {
     position: static;
-    right: auto;
-    top: auto;
-    bottom: auto;
-    width: auto;
+    max-height: none;
     padding-right: 0;
   }
 
@@ -83,11 +78,7 @@ const store = useSessionStore()
   }
 
   .right-rail__inner {
-    padding-top: 60px;
-  }
-
-  .right-rail__inner--leader {
-    padding-top: 20px;
+    margin-top: var(--dm-space-5);
   }
 }
 </style>
