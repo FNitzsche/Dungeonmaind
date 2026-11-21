@@ -96,6 +96,46 @@ export const useMapStore = defineStore('map', () => {
   }
 
   /**
+   * Apply a map graph pushed over the player WebSocket.
+   * Ignores updates for a different session than the one this browser is in.
+   */
+  function applyRemoteGraph(payload: {
+    session_id?: string
+    locations?: Array<{
+      id: string
+      canonical_name: string
+      aliases?: string[]
+      event_ids?: string[]
+    }>
+    edges?: Array<{
+      from_location_id: string
+      to_location_id: string
+      relationship: string
+    }>
+  }) {
+    const id = payload.session_id
+    if (!id) return
+    const active = useSessionStore().sessionId
+    if (id !== active && id !== sessionId.value) return
+
+    const graph = mapApi.graphFromLocationsAndEdges(id, payload.locations ?? [], payload.edges ?? [])
+    sessionId.value = id
+    nodes.value = graph.nodes ?? []
+    edges.value = graph.edges ?? []
+    dataSource.value = 'api'
+    apiStatus.value = 'up'
+    error.value = null
+
+    const selected = selectedPlaceId.value
+    const selectedNodeAfter = nodes.value.find((node) => node.id === selected)
+    if (selected && !selectedNodeAfter) {
+      clearSelection()
+    } else if (selectedNodeAfter?.event_ids) {
+      selectedEventIds.value = selectedNodeAfter.event_ids
+    }
+  }
+
+  /**
    * Ask the backend to build and save the map, then reload it.
    * @param forSessionId - Optional override. Defaults to the session store key.
    */
@@ -230,6 +270,7 @@ export const useMapStore = defineStore('map', () => {
     edgeCount,
     selectedNode,
     fetchMap,
+    applyRemoteGraph,
     generateMap,
     selectPlace,
     resolvePlaceQuery,
