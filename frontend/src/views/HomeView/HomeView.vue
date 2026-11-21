@@ -1,13 +1,12 @@
 <script setup lang="ts">
 /**
- * HomeView – the main game dashboard. Manages the WebSocket connection,
- * player roster sync, and renders sub-components for questions, recording,
+ * HomeView – the main game dashboard. Renders questions, recording,
  * audio upload, and the right rail (dice, abilities, join link).
+ * Player presence stays open in App.vue so Map/Timeline keep the socket.
  */
-import { onMounted, onUnmounted, onBeforeUnmount, ref } from 'vue'
+import { onMounted } from 'vue'
 import { useSessionStore } from '@/stores/session.ts'
 import { useRouter } from 'vue-router'
-import { SERVER_CONFIG } from '@/config/config'
 import HomeHeader from '@/views/HomeView/HomeHeader.vue'
 import SessionOverview from '@/views/HomeView/SessionOverview.vue'
 import QuestionSection from '@/views/HomeView/QuestionSection.vue'
@@ -18,136 +17,10 @@ import RightRail from '@/views/HomeView/RightRail.vue'
 const router = useRouter()
 const store = useSessionStore()
 
-let socket: WebSocket | null = null
-let manualClose = false
-let connectionLost = false
-
-function disconnectToLogin() {
-  manualClose = true
-  try {
-    socket?.close(1000, 'user acknowledged')
-  } catch {}
-  socket = null
-
-  store.forceLogout()
-  router.push({ name: 'login' })
-}
-
-function markConnectionLost(reason: string) {
-  if (connectionLost) return // nur einmal auslösen
-  connectionLost = true
-
-  //Socket schließen (triggert onclose), aber Modal bleibt
-  manualClose = true
-  try {
-    socket?.close(4000, 'connection lost')
-  } catch {}
-  socket = null
-
-  try {
-    window.confirm(
-      `Verbindung zum Server unterbrochen.\n\n${reason}\n\nDu wirst jetzt zum Login weitergeleitet.`,
-    )
-  } finally {
-    disconnectToLogin()
-  }
-}
-
-function apiBase(): string {
-  return store.backendUrl ?? SERVER_CONFIG.BASE_URL
-}
-
-/** Build WS URL from HTTP base + path */
-function wsUrl(baseHttpUrl: string, path: string): string {
-  const u = new URL(baseHttpUrl)
-  u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:'
-  u.pathname = path.startsWith('/') ? path : `/${path}`
-  return u.toString()
-}
-
-/** WebSocket lifecycle */
 onMounted(() => {
-  // Guard: ohne Player -> zurück zum Login
-  const p = store.currentPlayer
-  if (!p) {
-    router.push({ name: 'login' })
-    return
+  if (!store.currentPlayer) {
+    void router.push({ name: 'login' })
   }
-
-  connectionLost = false
-  manualClose = false
-
-  // Use wsUrl() to ensure ws/wss scheme, then attach query params
-  const baseWs = wsUrl(apiBase(), SERVER_CONFIG.ENDPOINTS.WS_PLAYERS)
-  const url = new URL(baseWs)
-  url.search = new URLSearchParams({
-    player_id: p.id,
-    name: p.name,
-    role: p.role,
-  }).toString()
-
-  socket = new WebSocket(url.toString())
-
-  socket.onopen = async () => {
-    try {
-      await store.loadPlayers() // initial list
-    } catch (e) {
-      console.error('loadPlayers failed', e)
-    }
-  }
-
-  socket.onmessage = (ev) => {
-    let msg: any
-    try {
-      msg = JSON.parse(ev.data)
-    } catch {
-      return
-    }
-
-    if (msg.type === 'join') {
-      // centralized in store
-      store.applyWsJoin(msg.player)
-    } else if (msg.type === 'leave') {
-      store.applyWsLeave(msg.player_id)
-    } else if (msg.type === 'update' && msg.player?.id) {
-      // generic upsert path (expects full PlayerOut with nested hp)
-      store.applyWsUpdate(msg.player)
-    } else if (msg.type === 'health/update' && msg.hp) {
-      // backend now sends nested hp directly
-      store.patchPlayer(msg.player_id, { hp: msg.hp })
-    } else if (msg.type === 'session_changed' || msg.type === 'session_imported') {
-      // The table moved to another session (new game or loaded save): follow it.
-      void store.refreshActiveSession()
-    }
-  }
-
-  socket.onclose = (ev) => {
-    // 4001 = vom Server gekickt
-    if (ev.code === 4001) {
-      store.forceLogout()
-      router.push({ name: 'login' })
-      socket = null
-      return
-    }
-    socket = null
-
-    // Wenn nicht bewusst geschlossen, ist es "verbindung verloren"
-    if (!manualClose) {
-      markConnectionLost(`Websocket closed (code ${ev.code || 'n/a'})`)
-    }
-  }
-
-  socket.onerror = () => {
-    markConnectionLost('Websocket error')
-  }
-})
-
-onBeforeUnmount(() => {
-  manualClose = true
-  try {
-    socket?.close(1000, 'unmount')
-  } catch {}
-  socket = null
 })
 </script>
 
