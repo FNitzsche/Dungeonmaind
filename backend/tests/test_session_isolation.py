@@ -489,6 +489,35 @@ class TwoSessionsNeverMixTests(SessionIsolationTestCase):
         for location in body['locations']:
             self.assertTrue(set(location['event_ids']) <= second_event_ids)
 
+    async def test_regenerating_events_and_map_never_runs_whisper_again(self) -> None:
+        first = await self.new_game('Ana')
+        await self.record(first, WHOLE_SCRIPT)
+        await timeline_store.clear_session(first)
+        await map_store.clear_session(first)
+
+        with (
+            mock.patch.object(
+                self.whisper, 'load_audio', side_effect=AssertionError('audio was loaded again')
+            ) as load_audio,
+            mock.patch.object(
+                self.whisper, 'transcribe', side_effect=AssertionError('Whisper ran again')
+            ) as transcribe,
+        ):
+            events = await self.generate_events(first)
+            graph = await self.client.post(
+                '/map/generate', json={'session_id': first}, headers={'X-Player-Id': self.leader_id}
+            )
+
+        self.assertEqual(events.status_code, 200, events.text)
+        self.assertEqual(events.json()['events_generated'], 4)
+        self.assertEqual(graph.status_code, 200, graph.text)
+        self.assertEqual(
+            await self.map_places(first),
+            ['Neverwinter', 'Phandalin', 'Cragmaw Castle', 'Wave Echo Cave'],
+        )
+        load_audio.assert_not_called()
+        transcribe.assert_not_called()
+
     async def test_generate_events_in_a_game_without_recording_finds_nothing(self) -> None:
         first = await self.new_game('Ana')
         await self.record(first, WHOLE_SCRIPT)
