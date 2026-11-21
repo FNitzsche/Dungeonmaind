@@ -200,7 +200,11 @@ async def _require_leader(
     actor_id: UUID | None = Query(None, alias='actor_id'),
     x_player_id: str | None = Header(default=None, alias='X-Player-Id'),
 ):
-    """Dependency that ensures the requester is an active leader.
+    """Dependency that ensures the requester is the group's leader.
+
+    Presence is separate from the role check: leaving Home closes the
+    presence WebSocket and marks the leader inactive, but they are still
+    the leader and may edit the map from /map or /timeline.
 
     Args:
         actor_id: Optional query parameter for the actor's UUID.
@@ -210,7 +214,7 @@ async def _require_leader(
         The leader Player object.
 
     Raises:
-        HTTPException 403: If no active leader is found.
+        HTTPException 403: If the caller is not the leader (or was kicked).
     """
     candidate_ids: list[UUID] = []
 
@@ -224,7 +228,7 @@ async def _require_leader(
 
     for cid in candidate_ids:
         for p in players:
-            if p.id == cid and p.status == PlayerStatus.active and p.role == Role.leader:
+            if p.id == cid and p.role == Role.leader and p.status != PlayerStatus.kicked:
                 return p
 
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Leader permissions required')
