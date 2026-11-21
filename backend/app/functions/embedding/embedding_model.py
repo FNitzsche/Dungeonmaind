@@ -133,6 +133,11 @@ def embedd_transcriptions(
         persist_directory (str | None): Optional custom ChromaDB path.
         session_id: Key of the session the texts were recorded in.
 
+    Returns:
+        The saved chunks in the order of ``embedding_text``. Each one carries
+        the entities extracted from its text, so callers can reuse them
+        instead of extracting them again.
+
     Raises:
         ValueError: If embedding_text and speakers have different lengths.
     """
@@ -169,6 +174,7 @@ def embedd_transcriptions(
         documents.append(Document(page_content=text, metadata=metadata))
 
     write_to_ChromaDB(persist_directory, documents, embedding_model)
+    return documents
 
 
 def adopt_legacy_transcriptions(session_id: str, persist_directory: str | None = None) -> int:
