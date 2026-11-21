@@ -15,6 +15,7 @@ from app.domain.map_overrides import (
 from app.functions.geo.map_overrides import (
     apply_map_overrides,
     load_session_overrides,
+    next_location_id,
     record_added_connection,
     record_merge,
     record_removed_connection,
@@ -196,6 +197,63 @@ class ApplyMapOverridesTests(unittest.TestCase):
         self.assertEqual(edges[-1].to_location_id, 'loc_1')
         self.assertEqual(edges[-1].relationship, MapEdgeRelationship.travel)
 
+    def test_next_location_id_skips_ids_named_in_overrides(self) -> None:
+        locations = [_location('loc_4', 'the reach', ['evt_1', 'evt_2'])]
+        overrides = SessionMapOverrides(
+            merges=[MapMerge(source_location_ids=['loc_5'], target_location_id='loc_4')],
+            splits=[
+                MapSplit(
+                    source_location_id='loc_4',
+                    new_location_id='loc_5',
+                    canonical_name='harmony',
+                    event_ids=['evt_1'],
+                )
+            ],
+        )
+
+        self.assertEqual(next_location_id(locations, overrides), 'loc_6')
+
+    def test_split_survives_when_new_id_is_not_a_merge_source(self) -> None:
+        locations = [_location('loc_4', 'the reach', ['evt_1', 'evt_2'])]
+        overrides = SessionMapOverrides(
+            merges=[MapMerge(source_location_ids=['loc_5'], target_location_id='loc_4')],
+            splits=[
+                MapSplit(
+                    source_location_id='loc_4',
+                    new_location_id='loc_6',
+                    canonical_name='harmony',
+                    event_ids=['evt_1'],
+                )
+            ],
+        )
+        result, _ = apply_map_overrides(locations, [], overrides)
+
+        self.assertEqual([item.id for item in result], ['loc_4', 'loc_6'])
+        harmony = next(item for item in result if item.id == 'loc_6')
+        self.assertEqual(harmony.canonical_name, 'harmony')
+        self.assertEqual(harmony.event_ids, ['evt_1'])
+
+    def test_split_then_merge_absorbs_the_new_place(self) -> None:
+        overrides = SessionMapOverrides(
+            splits=[
+                MapSplit(
+                    source_location_id='loc_3',
+                    new_location_id='loc_4',
+                    canonical_name='Rumour Hall',
+                    event_ids=['evt_4'],
+                )
+            ],
+            merges=[MapMerge(source_location_ids=['loc_4'], target_location_id='loc_2')],
+        )
+        locations, _ = apply_map_overrides(self.locations, self.edges, overrides)
+
+        self.assertEqual([item.id for item in locations], ['loc_1', 'loc_2', 'loc_3'])
+        lake = next(item for item in locations if item.id == 'loc_2')
+        tavern = next(item for item in locations if item.id == 'loc_3')
+        self.assertEqual(tavern.event_ids, ['evt_3'])
+        self.assertEqual(lake.event_ids, ['evt_2', 'evt_4'])
+        self.assertIn('Rumour Hall', lake.aliases)
+
     def test_apply_is_idempotent(self) -> None:
         overrides = SessionMapOverrides(
             renames=[MapRename(location_id='loc_1', canonical_name='Crossing')],
@@ -372,6 +430,34 @@ class MapOverridesRouterTests(unittest.IsolatedAsyncioTestCase):
         names = [item['canonical_name'] for item in response.json()['locations']]
         self.assertIn('The Gate', names)
         gate = next(item for item in response.json()['locations'] if item['id'] == 'loc_3')
+        self.assertEqual(gate['event_ids'], ['evt_1'])
+
+    async def test_split_after_merge_does_not_reuse_a_merged_id(self) -> None:
+        await self.client.post('/map/generate', json={'session_id': 'sess-overrides'})
+        await self.client.post(
+            '/map/overrides/merge',
+            json={
+                'session_id': 'sess-overrides',
+                'source_location_ids': ['loc_2'],
+                'target_location_id': 'loc_1',
+            },
+        )
+
+        response = await self.client.post(
+            '/map/overrides/split',
+            json={
+                'session_id': 'sess-overrides',
+                'source_location_id': 'loc_1',
+                'canonical_name': 'The Gate',
+                'event_ids': ['evt_1'],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        locations = response.json()['locations']
+        self.assertEqual({item['id'] for item in locations}, {'loc_1', 'loc_3'})
+        gate = next(item for item in locations if item['canonical_name'] == 'The Gate')
+        self.assertEqual(gate['id'], 'loc_3')
         self.assertEqual(gate['event_ids'], ['evt_1'])
 
     async def test_connect_and_disconnect_endpoints_rewire_links(self) -> None:

@@ -210,10 +210,11 @@ def apply_map_overrides(
 ) -> tuple[list[MapLocation], list[MapEdge]]:
     """Apply stored DM corrections onto an auto-generated map graph.
 
-    Order: renames, then merges, then splits, then removed connections,
-    then added connections. Operations that no longer match the graph
-    (already-merged sources, existing split ids) are skipped so applying
-    twice is safe.
+    Order: renames, then splits, then merges, then removed connections,
+    then added connections. Splits run before merges so a place that was
+    carved out and later absorbed stays gone. Operations that no longer
+    match the graph (already-merged sources, existing split ids) are
+    skipped so applying twice is safe.
 
     Args:
         locations: Auto-generated map locations.
@@ -228,10 +229,10 @@ def apply_map_overrides(
 
     for rename in overrides.renames:
         _apply_rename(next_locations, rename)
-    for merge in overrides.merges:
-        next_locations, next_edges = _apply_merge(next_locations, next_edges, merge)
     for split in overrides.splits:
         next_locations = _apply_split(next_locations, split)
+    for merge in overrides.merges:
+        next_locations, next_edges = _apply_merge(next_locations, next_edges, merge)
     next_edges = _apply_removed_connections(next_edges, overrides.removed_connections)
     next_edges = _apply_added_connections(next_locations, next_edges, overrides.added_connections)
     return next_locations, next_edges
@@ -438,12 +439,48 @@ def _resequence_edges(edges: list[MapEdge]) -> list[MapEdge]:
     return sequenced
 
 
-def _next_location_id(locations: list[MapLocation]) -> str:
+def next_location_id(
+    locations: list[MapLocation],
+    overrides: SessionMapOverrides | None = None,
+) -> str:
+    """Return a loc_N id not used by the graph or stored DM corrections.
+
+    New splits must not reuse an id that a later merge still names, or the
+    new pin is created and then immediately absorbed.
+    """
     highest = 0
-    for location in locations:
-        if not location.id.startswith('loc_'):
+    for location_id in _known_location_ids(locations, overrides):
+        if not location_id.startswith('loc_'):
             continue
-        suffix = location.id.removeprefix('loc_')
+        suffix = location_id.removeprefix('loc_')
         if suffix.isdigit():
             highest = max(highest, int(suffix))
     return f'loc_{highest + 1}'
+
+
+def _next_location_id(
+    locations: list[MapLocation],
+    overrides: SessionMapOverrides | None = None,
+) -> str:
+    return next_location_id(locations, overrides)
+
+
+def _known_location_ids(
+    locations: list[MapLocation],
+    overrides: SessionMapOverrides | None = None,
+) -> set[str]:
+    ids = {location.id for location in locations if location.id}
+    if overrides is None:
+        return ids
+    for rename in overrides.renames:
+        ids.add(rename.location_id)
+    for merge in overrides.merges:
+        ids.add(merge.target_location_id)
+        ids.update(merge.source_location_ids)
+    for split in overrides.splits:
+        ids.add(split.source_location_id)
+        ids.add(split.new_location_id)
+    for change in (*overrides.added_connections, *overrides.removed_connections):
+        ids.add(change.from_location_id)
+        ids.add(change.to_location_id)
+    return {item for item in ids if item}

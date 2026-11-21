@@ -33,9 +33,9 @@ from app.domain.timeline_store import timeline_store
 from app.functions.geo.build_map import generate_map
 from app.functions.geo.link_builder import build_edges
 from app.functions.geo.map_overrides import (
-    _next_location_id,
     apply_map_overrides,
     load_session_overrides,
+    next_location_id,
     record_added_connection,
     record_merge,
     record_removed_connection,
@@ -397,7 +397,8 @@ async def split_map_location(req: MapSplitRequest) -> MapGraphResponse:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail='Name is required')
     locations, edges = await _session_edges(session_id)
     source = _require_place(locations, req.source_location_id)
-    new_id = (req.new_location_id or '').strip() or _next_location_id(locations)
+    overrides = load_session_overrides(session_id)
+    new_id = (req.new_location_id or '').strip() or next_location_id(locations, overrides)
     event_ids = [item for item in req.event_ids if item in source.event_ids]
     record_split(
         session_id,

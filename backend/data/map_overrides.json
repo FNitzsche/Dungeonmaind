@@ -1,3 +1,297 @@
 {
-    "sessions": {}
+    "sessions": {
+        "MapEditDemo/Session_1": {
+            "renames": [
+                {
+                    "location_id": "loc_3",
+                    "canonical_name": "Dragon's Rest Tavern"
+                }
+            ],
+            "merges": [
+                {
+                    "source_location_ids": [
+                        "loc_4"
+                    ],
+                    "target_location_id": "loc_2"
+                }
+            ],
+            "splits": [
+                {
+                    "source_location_id": "loc_3",
+                    "new_location_id": "loc_4",
+                    "canonical_name": "Rumour Hall",
+                    "event_ids": [
+                        "evt_4"
+                    ],
+                    "aliases": []
+                }
+            ],
+            "connections": {
+                "added": [
+                    {
+                        "from_location_id": "loc_3",
+                        "to_location_id": "loc_1",
+                        "relationship": "proximity"
+                    }
+                ],
+                "removed": [
+                    {
+                        "from_location_id": "loc_2",
+                        "to_location_id": "loc_3",
+                        "relationship": "travel"
+                    }
+                ]
+            }
+        },
+        "Malavikas campaign/Session_1": {
+            "renames": [
+                {
+                    "location_id": "loc_1",
+                    "canonical_name": "Velmora Cross"
+                },
+                {
+                    "location_id": "loc_2",
+                    "canonical_name": "Miss Toid"
+                }
+            ],
+            "merges": [
+                {
+                    "source_location_ids": [
+                        "loc_1"
+                    ],
+                    "target_location_id": "loc_3"
+                },
+                {
+                    "source_location_ids": [
+                        "loc_3"
+                    ],
+                    "target_location_id": "loc_4"
+                },
+                {
+                    "source_location_ids": [
+                        "loc_2"
+                    ],
+                    "target_location_id": "loc_13"
+                },
+                {
+                    "source_location_ids": [
+                        "loc_13"
+                    ],
+                    "target_location_id": "loc_5"
+                },
+                {
+                    "source_location_ids": [
+                        "loc_5"
+                    ],
+                    "target_location_id": "loc_12"
+                },
+                {
+                    "source_location_ids": [
+                        "loc_7"
+                    ],
+                    "target_location_id": "loc_11"
+                },
+                {
+                    "source_location_ids": [
+                        "loc_11"
+                    ],
+                    "target_location_id": "loc_10"
+                },
+                {
+                    "source_location_ids": [
+                        "loc_10"
+                    ],
+                    "target_location_id": "loc_4"
+                },
+                {
+                    "source_location_ids": [
+                        "loc_12"
+                    ],
+                    "target_location_id": "loc_4"
+                },
+                {
+                    "source_location_ids": [
+                        "loc_9"
+                    ],
+                    "target_location_id": "loc_4"
+                },
+                {
+                    "source_location_ids": [
+                        "loc_8"
+                    ],
+                    "target_location_id": "loc_4"
+                },
+                {
+                    "source_location_ids": [
+                        "loc_6"
+                    ],
+                    "target_location_id": "loc_4"
+                },
+                {
+                    "source_location_ids": [
+                        "loc_5"
+                    ],
+                    "target_location_id": "loc_4"
+                }
+            ],
+            "splits": [
+                {
+                    "source_location_id": "loc_6",
+                    "new_location_id": "loc_13",
+                    "canonical_name": "test",
+                    "event_ids": [
+                        "a6d7af249c78",
+                        "8c3656bdf29f",
+                        "8d3705371ed3",
+                        "bef0a931b071",
+                        "373f4781961b",
+                        "17c9ef53c2d6",
+                        "5f97478ed24f",
+                        "254832562981",
+                        "6dadc64dad91"
+                    ],
+                    "aliases": []
+                },
+                {
+                    "source_location_id": "loc_6",
+                    "new_location_id": "loc_13",
+                    "canonical_name": "test",
+                    "event_ids": [
+                        "a6d7af249c78"
+                    ],
+                    "aliases": []
+                },
+                {
+                    "source_location_id": "loc_4",
+                    "new_location_id": "loc_5",
+                    "canonical_name": "testpin",
+                    "event_ids": [
+                        "6862e916fe76"
+                    ],
+                    "aliases": []
+                },
+                {
+                    "source_location_id": "loc_4",
+                    "new_location_id": "loc_5",
+                    "canonical_name": "testpin",
+                    "event_ids": [
+                        "f8de12b9f226"
+                    ],
+                    "aliases": []
+                },
+                {
+                    "source_location_id": "loc_4",
+                    "new_location_id": "loc_5",
+                    "canonical_name": "sfsa",
+                    "event_ids": [
+                        "fe7d962624ab"
+                    ],
+                    "aliases": []
+                },
+                {
+                    "source_location_id": "loc_4",
+                    "new_location_id": "loc_5",
+                    "canonical_name": "new test",
+                    "event_ids": [
+                        "6862e916fe76"
+                    ],
+                    "aliases": []
+                },
+                {
+                    "source_location_id": "loc_4",
+                    "new_location_id": "loc_5",
+                    "canonical_name": "harmony",
+                    "event_ids": [
+                        "6862e916fe76"
+                    ],
+                    "aliases": []
+                },
+                {
+                    "source_location_id": "loc_4",
+                    "new_location_id": "loc_5",
+                    "canonical_name": "hitch",
+                    "event_ids": [
+                        "f8de12b9f226"
+                    ],
+                    "aliases": []
+                }
+            ],
+            "connections": {
+                "added": [
+                    {
+                        "from_location_id": "loc_6",
+                        "to_location_id": "loc_4",
+                        "relationship": "proximity"
+                    },
+                    {
+                        "from_location_id": "loc_6",
+                        "to_location_id": "loc_4",
+                        "relationship": "travel"
+                    },
+                    {
+                        "from_location_id": "loc_7",
+                        "to_location_id": "loc_4",
+                        "relationship": "travel"
+                    },
+                    {
+                        "from_location_id": "loc_7",
+                        "to_location_id": "loc_6",
+                        "relationship": "proximity"
+                    }
+                ],
+                "removed": [
+                    {
+                        "from_location_id": "loc_6",
+                        "to_location_id": "loc_7",
+                        "relationship": "proximity"
+                    },
+                    {
+                        "from_location_id": "loc_12",
+                        "to_location_id": "loc_7",
+                        "relationship": "proximity"
+                    },
+                    {
+                        "from_location_id": "loc_6",
+                        "to_location_id": "loc_7",
+                        "relationship": "travel"
+                    },
+                    {
+                        "from_location_id": "loc_7",
+                        "to_location_id": "loc_8",
+                        "relationship": "travel"
+                    },
+                    {
+                        "from_location_id": "loc_6",
+                        "to_location_id": "loc_11",
+                        "relationship": "proximity"
+                    },
+                    {
+                        "from_location_id": "loc_11",
+                        "to_location_id": "loc_12",
+                        "relationship": "travel"
+                    },
+                    {
+                        "from_location_id": "loc_10",
+                        "to_location_id": "loc_11",
+                        "relationship": "travel"
+                    },
+                    {
+                        "from_location_id": "loc_11",
+                        "to_location_id": "loc_8",
+                        "relationship": "travel"
+                    },
+                    {
+                        "from_location_id": "loc_12",
+                        "to_location_id": "loc_11",
+                        "relationship": "proximity"
+                    },
+                    {
+                        "from_location_id": "loc_6",
+                        "to_location_id": "loc_11",
+                        "relationship": "travel"
+                    }
+                ]
+            }
+        }
+    }
 }
