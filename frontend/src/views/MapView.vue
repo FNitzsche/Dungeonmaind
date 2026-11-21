@@ -399,7 +399,10 @@ watch(
         </div>
       </header>
 
-      <p v-if="mapStore.dataSource === 'timeline'" class="info-banner">
+      <p
+        v-if="mapStore.dataSource === 'timeline' && mapStore.apiStatus === 'down'"
+        class="info-banner"
+      >
         Map API unavailable. Showing places inferred from timeline events.
       </p>
 
